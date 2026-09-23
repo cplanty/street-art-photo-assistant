@@ -24,6 +24,26 @@
   {% for tag in known_tags %}<option value="{{ tag }}">{% endfor %}
   </datalist>
 
+  <dialog id="artist-csv-dialog" class="artist-dialog">
+    <form method="dialog">
+      <h2>Add to artists.csv</h2>
+      <label>Tag <input id="artist-csv-tag" required></label>
+      <label>Street Art Cities slug
+        <a href="https://streetartcities.com/artists" target="_blank" rel="noopener">Find artist on SAC ↗</a>
+        <input id="artist-csv-slug" placeholder="for example: le-cyklop">
+      </label>
+      <label>Instagram handle
+        <a href="https://www.instagram.com/explore/" target="_blank" rel="noopener">Find profile on Instagram ↗</a>
+        <input id="artist-csv-instagram" placeholder="without @">
+      </label>
+      <p id="artist-csv-error" class="error"></p>
+      <div class="button-row">
+        <button id="artist-csv-cancel" type="button">Cancel</button>
+        <button id="artist-csv-save" class="primary" type="button">Save to CSV</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="detail-view" class="detail-columns">
     <div class="detail-column">
       <section class="card">
@@ -123,6 +143,10 @@
           <span class="gps-legend"><i style="background:#8b949e"></i>context</span>
           <span class="gps-legend"><i style="background:#cf222e"></i>target</span>
           <span id="gps-readout" class="gps-readout">{% if cluster.latitude is not none and cluster.longitude is not none %}{{ '%.6f, %.6f'|format(cluster.latitude, cluster.longitude) }}{% else %}—{% endif %}</span>
+          <span id="gps-location-links" class="gps-location-links"{% if cluster.latitude is none or cluster.longitude is none %} hidden{% endif %}>
+            <a id="gps-google-maps"{% if cluster.latitude is not none and cluster.longitude is not none %} href="https://www.google.com/maps/search/?api=1&amp;query={{ cluster.latitude }},{{ cluster.longitude }}"{% endif %} target="_blank" rel="noopener">Google Maps ↗</a>
+            <a id="gps-street-view"{% if cluster.latitude is not none and cluster.longitude is not none %} href="https://www.google.com/maps/@?api=1&amp;map_action=pano&amp;viewpoint={{ cluster.latitude }},{{ cluster.longitude }}"{% endif %} target="_blank" rel="noopener">Street View ↗</a>
+          </span>
           <div class="gps-all-actions">
             <button id="gps-apply-all" type="button" onclick="applyGlobalGps()" disabled>Apply to all</button>
             <button type="button" onclick="resetAllGps()">Reset all</button>
@@ -146,10 +170,14 @@
             {% if candidate.cached_image %}<a href="{{ url_for('reference', path=candidate.cached_image) }}" target="_blank" rel="noopener"><img src="{{ url_for('reference', path=candidate.cached_image) }}" alt="Street Art Cities reference"></a>{% endif %}
             <div>
               <h3>{{ candidate.artist or candidate.title or candidate.marker_id }}</h3>
-              <p>{{ candidate.distance_m }} m · {{ candidate.status }}{% if candidate.tag_match %} · artist match{% endif %}</p>
+              <p>{{ candidate.distance_m }} m · <strong class="sac-status sac-status-{{ candidate.status|lower }}">{{ candidate.status }}</strong>{% if candidate.tag_match %} · artist match{% endif %}</p>
               {% if candidate.visual_similarity is defined and candidate.visual_similarity is not none %}<p>Visual similarity: {{ '%.3f'|format(candidate.visual_similarity) }}</p>{% endif %}
               {% if candidate.visual_error %}<p class="muted">Reference image unavailable: {{ candidate.visual_error }}</p>{% endif %}
-              <a href="{{ candidate.url }}" target="_blank" rel="noopener noreferrer">Open SAC marker ↗</a>
+              <p class="evidence-links">
+                <a href="{{ candidate.url }}" target="_blank" rel="noopener noreferrer">SAC marker ↗</a>
+                {% if candidate.artist_page_url %}<a href="{{ candidate.artist_page_url }}" target="_blank" rel="noopener noreferrer">SAC artist ↗</a>{% endif %}
+                {% if candidate.instagram_url %}<a href="{{ candidate.instagram_url }}" target="_blank" rel="noopener noreferrer">Instagram ↗</a>{% endif %}
+              </p>
             </div>
           </article>
         {% else %}
@@ -173,6 +201,12 @@ const runId = {{ run_id|tojson }};
 const clusterId = {{ cluster.id|tojson }};
 const cluster = {{ cluster|tojson }};
 const readOnly = {{ read_only|tojson }};
+const knownArtistTags = new Set({{ artist_tags|tojson }}.map(tag => tag.toLocaleLowerCase()));
+const candidateSlugsByName = new Map(
+  ((cluster.street_art_cities || {}).candidates || [])
+    .filter(candidate => candidate.artist && candidate.artist_slug)
+    .map(candidate => [candidate.artist.toLocaleLowerCase(), candidate.artist_slug])
+);
 const allPhotoPaths = [...cluster.photos, ...cluster.context_photos].map(photo => photo.path);
 let pendingTagPlan = null;
 let pendingGpsPlan = null;
@@ -251,13 +285,65 @@ async function applyPlan(kind) {
   const plan = kind === 'tag' ? pendingTagPlan : pendingGpsPlan;
   const container = document.getElementById(kind === 'tag' ? 'tag-plan' : 'gps-plan');
   if (!plan || !confirm(`Apply this exact preview to ${plan.items.length} image(s)?`)) return;
+  const addedTags = kind === 'tag'
+    ? [...new Set(plan.items.flatMap(item =>
+        item.after.filter(tag => !item.before.includes(tag))
+      ))]
+    : [];
   try {
     const result = await api(`/api/plans/${encodeURIComponent(plan.id)}/apply`, {});
-    container.textContent = `${result.changed} image(s) updated. Reloading…`;
-    setTimeout(() => location.reload(), 500);
+    container.textContent = `${result.changed} image(s) updated.`;
+    for (const tag of addedTags) {
+      await maybeAddArtistToCsv(tag);
+    }
+    location.reload();
   } catch (error) {
     container.textContent = error.message;
   }
+}
+
+function maybeAddArtistToCsv(tag) {
+  if (!tag || tag.startsWith('_') || knownArtistTags.has(tag.toLocaleLowerCase())) {
+    return Promise.resolve();
+  }
+  return new Promise(resolve => {
+    const dialog = document.getElementById('artist-csv-dialog');
+    const tagInput = document.getElementById('artist-csv-tag');
+    const slugInput = document.getElementById('artist-csv-slug');
+    const instagramInput = document.getElementById('artist-csv-instagram');
+    const error = document.getElementById('artist-csv-error');
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      dialog.close();
+      resolve();
+    };
+    tagInput.value = tag;
+    slugInput.value = candidateSlugsByName.get(tag.toLocaleLowerCase()) || '';
+    instagramInput.value = '';
+    error.textContent = '';
+    document.getElementById('artist-csv-cancel').onclick = finish;
+    dialog.oncancel = event => {
+      event.preventDefault();
+      finish();
+    };
+    document.getElementById('artist-csv-save').onclick = async () => {
+      try {
+        await api('/api/artists', {
+          tag: tagInput.value.trim(),
+          slug: slugInput.value.trim(),
+          instagram: instagramInput.value.trim()
+        });
+        knownArtistTags.add(tagInput.value.trim().toLocaleLowerCase());
+        finish();
+      } catch (saveError) {
+        error.textContent = saveError.message;
+      }
+    };
+    dialog.showModal();
+    (slugInput.value ? instagramInput : slugInput).focus();
+  });
 }
 
 function mapPoint(photo, kind) {
@@ -274,6 +360,12 @@ function mapPoint(photo, kind) {
 
 function updateTargetFields(lat, lon) {
   document.getElementById('gps-readout').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+  document.getElementById('gps-location-links').hidden = false;
+  const encoded = `${lat},${lon}`;
+  document.getElementById('gps-google-maps').href =
+    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(encoded)}`;
+  document.getElementById('gps-street-view').href =
+    `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${encodeURIComponent(encoded)}`;
 }
 
 function initGpsMap() {
@@ -687,6 +779,10 @@ document.addEventListener('keydown', event => {
 });
 initResizers();
 initGpsMap();
+requestAnimationFrame(() => {
+  const firstEditor = document.querySelector('.tag-editor:not(:disabled)');
+  if (firstEditor) firstEditor.focus();
+});
 </script>
 </body>
 </html>

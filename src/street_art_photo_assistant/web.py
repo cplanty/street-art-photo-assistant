@@ -6,6 +6,7 @@ import csv
 import hashlib
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -15,6 +16,7 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlparse
 
 from flask import (
     Flask,
@@ -79,21 +81,107 @@ def _inside(path: Path, roots: list[Path]) -> bool:
     )
 
 
-def _artist_tags(path: Path) -> tuple[list[str], dict[str, list[str]]]:
+ARTIST_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+INSTAGRAM_HANDLE_RE = re.compile(r"^[A-Za-z0-9._]+$")
+
+
+def _instagram_handle(value: str) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+    if "://" in value:
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError("Instagram URL must use HTTP or HTTPS")
+        if parsed.netloc.casefold() not in {
+            "instagram.com", "www.instagram.com"
+        }:
+            raise ValueError("Instagram URL must use instagram.com")
+        value = parsed.path.strip("/").split("/", 1)[0]
+    value = value.lstrip("@")
+    if value and not INSTAGRAM_HANDLE_RE.fullmatch(value):
+        raise ValueError("Instagram must be a handle or profile URL")
+    return value
+
+
+def _artist_tags(
+    path: Path,
+) -> tuple[list[str], dict[str, list[str]], dict[str, dict[str, str]]]:
     tags: list[str] = []
     by_slug: dict[str, list[str]] = {}
+    details_by_slug: dict[str, dict[str, str]] = {}
     if not path.is_file():
-        return tags, by_slug
+        return tags, by_slug, details_by_slug
     with path.open(encoding="utf-8-sig", newline="") as stream:
         for row in csv.DictReader(stream, delimiter=";"):
             tag = str(row.get("tag") or "").strip()
             slug = str(row.get("streetartcities_slug") or "").strip()
+            instagram = str(row.get("instagram") or "").strip()
             if not tag:
                 continue
             tags.append(tag)
             if slug:
                 by_slug.setdefault(slug, []).append(tag)
-    return sorted(set(tags), key=str.casefold), by_slug
+                details = details_by_slug.setdefault(
+                    slug, {"tag": tag, "instagram_url": ""}
+                )
+                if instagram and not details["instagram_url"]:
+                    try:
+                        handle = _instagram_handle(instagram)
+                    except ValueError:
+                        handle = ""
+                    if handle:
+                        details["instagram_url"] = (
+                            f"https://www.instagram.com/{quote(handle, safe='')}/"
+                        )
+    return sorted(set(tags), key=str.casefold), by_slug, details_by_slug
+
+
+def _append_artist(
+    path: Path,
+    *,
+    tag: str,
+    slug: str,
+    instagram: str,
+) -> bool:
+    tag = tag.strip()
+    slug = slug.strip().lower()
+    if not tag or len(tag) > 200 or "\n" in tag or "\r" in tag:
+        raise ValueError("Artist tag is required and must fit on one line")
+    if tag.startswith("_"):
+        raise ValueError("Internal tags are not added to artists.csv")
+    if slug and not ARTIST_SLUG_RE.fullmatch(slug):
+        raise ValueError("Street Art Cities slug is invalid")
+    handle = _instagram_handle(instagram)
+    fields = ["tag", "streetartcities_slug", "instagram", "status"]
+    rows: list[dict[str, str]] = []
+    if path.is_file():
+        with path.open(encoding="utf-8-sig", newline="") as stream:
+            rows = [
+                {field: str(row.get(field) or "") for field in fields}
+                for row in csv.DictReader(stream, delimiter=";")
+            ]
+    if any(row["tag"].casefold() == tag.casefold() for row in rows):
+        return False
+    rows.append({
+        "tag": tag,
+        "streetartcities_slug": slug,
+        "instagram": handle,
+        "status": "confirmed" if slug else "",
+    })
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    try:
+        with temporary.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.DictWriter(
+                stream, fieldnames=fields, delimiter=";", lineterminator="\n"
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return True
 
 
 def _choose_folder(initial: str) -> str:
@@ -365,6 +453,28 @@ def create_app(
         state["config"] = deepcopy(payload)
         return jsonify({"ok": True})
 
+    @app.post("/api/artists")
+    def add_artist():
+        if not _is_local_request():
+            return jsonify({"ok": False, "error": "Local access only"}), 403
+        if current_config().get("read_only"):
+            return jsonify({"ok": False, "error": "Read-only mode"}), 403
+        payload = request.get_json(force=True)
+        artists_path = resolve_local_path(
+            config_root, str(current_config()["paths"]["artists"])
+        )
+        added = _append_artist(
+            artists_path,
+            tag=str(payload.get("tag") or ""),
+            slug=str(payload.get("slug") or ""),
+            instagram=str(payload.get("instagram") or ""),
+        )
+        return jsonify({
+            "ok": True,
+            "added": added,
+            "path": str(artists_path),
+        })
+
     @app.post("/api/browse-folder")
     def browse_folder():
         if not _is_local_request():
@@ -568,7 +678,7 @@ def create_app(
         artists_path = resolve_local_path(
             config_root, str(current_config()["paths"]["artists"])
         )
-        known_tags, tags_by_slug = _artist_tags(artists_path)
+        artist_tags, tags_by_slug, artist_details = _artist_tags(artists_path)
         clustering = current_config()["clustering"]
         proposals = [
             str(clustering["unknown_tag"]),
@@ -578,13 +688,20 @@ def create_app(
             proposals.insert(0, str(cluster["tag"]))
         evidence = cluster.get("street_art_cities") or {}
         for candidate in evidence.get("candidates") or []:
+            slug = str(candidate.get("artist_slug") or "")
+            details = artist_details.get(slug) or {}
+            candidate["artist_page_url"] = (
+                f"https://streetartcities.com/artists/{quote(slug, safe='')}"
+                if slug else None
+            )
+            candidate["instagram_url"] = details.get("instagram_url") or None
             for tag in tags_by_slug.get(
-                str(candidate.get("artist_slug") or ""), []
+                slug, []
             ):
                 if tag not in proposals:
                     proposals.append(tag)
         autocomplete_tags = []
-        for tag in [*proposals, *known_tags]:
+        for tag in [*proposals, *artist_tags]:
             if tag not in autocomplete_tags:
                 autocomplete_tags.append(tag)
         photo_groups = [*cluster["photos"], *cluster["context_photos"]]
@@ -605,6 +722,7 @@ def create_app(
             run_id=run_id,
             cluster=cluster,
             known_tags=autocomplete_tags,
+            artist_tags=artist_tags,
             common_tags=common_tags,
             tag_proposals=proposals,
             previous_id=ids[(position - 1) % len(ids)],

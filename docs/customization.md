@@ -45,6 +45,12 @@ apply endpoints while keeping preview and reports available.
 - Visual matching uses a fixed local ORB threshold; the profile changes only
   candidate effort, not GPS or clustering thresholds.
 
+`data/artists.csv` remains the public tag-to-provider mapping. After a tag plan
+adds a non-internal tag that is not already present, the reviewer offers an
+**Add to artists.csv** helper for confirming its Street Art Cities slug and
+Instagram handle. The CSV update is atomic; `_`-prefixed workflow tags are
+never offered for insertion.
+
 ## Provider boundary
 
 Another comparison provider should consume normalized `PhotoCluster` records

@@ -3,7 +3,8 @@
 ## Generate and review clusters
 
 1. Add and enable one or more photo sources.
-2. Set the capture period and ordinary include/exclude tag filters.
+2. Set the capture period and ordinary include/exclude tag filters. **Last 24h**
+   fills both date and time boundaries using the local clock.
 3. Configure Street Art Cities and visual matching, or leave both disabled for
    an offline run.
 4. Select **Preview selection**.
@@ -70,7 +71,13 @@ files and before/after values before a separate apply confirmation.
 Tags found on every cluster image appear once in **On all photos**, where they
 can be previewed for removal from the complete cluster. Autocomplete lists
 `_unknown` and `_wall` before artist entries for underscore queries. Tab and
-Shift+Tab move directly between cluster/per-image tag editors.
+Shift+Tab move directly between cluster/per-image tag editors, and the first
+tag editor receives focus whenever a cluster page opens.
+
+Applied tag plans reload the cluster so new labels are immediately visible.
+When a newly added non-internal tag is absent from `data/artists.csv`, a helper
+asks the user to confirm its Street Art Cities slug and Instagram handle before
+atomically appending it. Tags beginning with `_` never trigger this helper.
 
 To fix one image independently, click its blue/grey map point to select it,
 view its thumbnail, and drag it. The map shows the number of pending markers
@@ -83,6 +90,13 @@ The bundled Leaflet map starts with an offline coordinate grid when Street Art
 Cities matching is disabled. OpenStreetMap, Esri satellite, OpenTopoMap, and
 CARTO base maps can be selected as network display context; their tiles are
 never used as proposal or matching evidence.
+The current red target also provides direct **Google Maps** and **Street View**
+links that update whenever the target moves.
+
+Street Art Cities candidate status is green for active markers and red for
+removed markers. Each candidate links to its marker, its SAC artist page when
+an artist slug exists, and the artist's Instagram profile when that handle is
+available in `data/artists.csv`.
 
 ## Runs
 

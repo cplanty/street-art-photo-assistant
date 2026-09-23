@@ -1,3 +1,4 @@
+import json
 import tempfile
 import time
 import unittest
@@ -78,6 +79,8 @@ class WebTests(unittest.TestCase):
         self.assertIn("Cache all SAC city pictures", page)
         self.assertIn("Configuration", page)
         self.assertIn("Preview selection", page)
+        self.assertIn("Last 24h", page)
+        self.assertIn("setLast24Hours", page)
         self.assertIn("Apply previewed GPS fixes", page)
         self.assertIn("Refresh &amp; run", page)
         self.assertIn('id="run-cancel-button"', page)
@@ -141,6 +144,27 @@ class WebTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertIn("Synthetic test", self.config_path.read_text(encoding="utf-8"))
 
+    def test_new_public_artist_can_be_added_once(self):
+        response = self.client.post("/api/artists", json={
+            "tag": "New Artist",
+            "slug": "new-artist",
+            "instagram": "@new.artist",
+        })
+
+        self.assertEqual(200, response.status_code, response.get_data(as_text=True))
+        self.assertTrue(response.get_json()["added"])
+        artists = self.root / "data" / "artists.csv"
+        self.assertIn(
+            "New Artist;new-artist;new.artist;confirmed",
+            artists.read_text(encoding="utf-8"),
+        )
+        duplicate = self.client.post("/api/artists", json={
+            "tag": "new artist",
+            "slug": "new-artist",
+            "instagram": "new.artist",
+        })
+        self.assertFalse(duplicate.get_json()["added"])
+
     def test_preview_gates_and_applies_same_source_gps_plan(self):
         preview = self.preview()
         self.assertEqual(2, preview["preview"]["selected"])
@@ -192,6 +216,33 @@ class WebTests(unittest.TestCase):
         )
         report = self.manager.report(started["id"])
         cluster_id = report["clusters"][0]["id"]
+        artists = self.root / "data" / "artists.csv"
+        artists.parent.mkdir(parents=True, exist_ok=True)
+        artists.write_text(
+            "tag;streetartcities_slug;instagram;status\n"
+            "Test Artist;test-artist;test.artist;confirmed\n",
+            encoding="utf-8",
+        )
+        report["clusters"][0]["street_art_cities"] = {
+            "status": "review",
+            "recommendation": "Review nearby marker",
+            "candidates": [{
+                "marker_id": "marker-1",
+                "url": "https://streetartcities.com/markers/marker-1",
+                "title": "Test marker",
+                "artist": "Test Artist",
+                "artist_slug": "test-artist",
+                "latitude": 48.0,
+                "longitude": 2.0,
+                "distance_m": 12,
+                "status": "active",
+                "tag_match": True,
+                "cached_image": None,
+            }],
+        }
+        (self.manager.run_root / started["id"] / "report.json").write_text(
+            json.dumps(report), encoding="utf-8"
+        )
         detail = self.client.get(
             f"/runs/{started['id']}/clusters/{cluster_id}"
         )
@@ -218,6 +269,19 @@ class WebTests(unittest.TestCase):
         self.assertIn("applyIndividualGpsMoves", detail_page)
         self.assertNotIn("Preview individual moves", detail_page)
         self.assertIn("Apply to all", detail_page)
+        self.assertIn("Google Maps", detail_page)
+        self.assertIn("Street View", detail_page)
+        self.assertIn("sac-status-active", detail_page)
+        self.assertIn("SAC artist", detail_page)
+        self.assertIn("Instagram", detail_page)
+        self.assertIn(
+            "https://streetartcities.com/artists/test-artist",
+            detail_page,
+        )
+        self.assertIn("https://www.instagram.com/test.artist/", detail_page)
+        self.assertIn('id="artist-csv-dialog"', detail_page)
+        self.assertIn("maybeAddArtistToCsv", detail_page)
+        self.assertIn("requestAnimationFrame", detail_page)
         self.assertIn("Satellite + labels", detail_page)
         self.assertIn("Topographic (OpenTopoMap)", detail_page)
         self.assertIn("Light (CARTO)", detail_page)
@@ -228,7 +292,10 @@ class WebTests(unittest.TestCase):
         self.assertIn("resetAllGps", detail_page)
         self.assertIn("gps-popup-thumbnail", detail_page)
         stylesheet_response = self.client.get("/static/app.css")
-        self.assertIn("[hidden] { display: none !important; }", stylesheet_response.get_data(as_text=True))
+        stylesheet = stylesheet_response.get_data(as_text=True)
+        self.assertIn("[hidden] { display: none !important; }", stylesheet)
+        self.assertIn(".sac-status-active { color: #1a7f37; }", stylesheet)
+        self.assertIn(".sac-status-removed { color: #cf222e; }", stylesheet)
         stylesheet_response.close()
         listed = self.client.get("/api/runs").get_json()["runs"]
         self.assertEqual(started["id"], listed[0]["id"])
