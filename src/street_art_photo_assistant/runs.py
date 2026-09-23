@@ -60,7 +60,10 @@ class RunManager:
         return self._run_path(run_id) / "manifest.json"
 
     def _write_manifest(self, manifest: dict[str, Any]) -> None:
-        _atomic_json(self._manifest_path(str(manifest["id"])), manifest)
+        stored = dict(manifest)
+        stored.pop("log", None)
+        stored.pop("progress", None)
+        _atomic_json(self._manifest_path(str(stored["id"])), stored)
 
     def start(
         self,
@@ -75,6 +78,16 @@ class RunManager:
         run_path.mkdir(parents=True)
         config_path = run_path / "config.json"
         _atomic_json(config_path, config)
+        _atomic_json(run_path / "progress.json", {
+            "version": 1,
+            "updated_at": now.isoformat(),
+            "stage": "queued",
+            "percent": 0,
+            "message": "Run queued",
+            "current": None,
+            "total": None,
+            "warnings": [],
+        })
         command = [
             str(self.python),
             "-m",
@@ -104,6 +117,7 @@ class RunManager:
                 "json": str(run_path / "report.json"),
                 "markdown": str(run_path / "report.md"),
                 "log": str(run_path / "run.log"),
+                "progress": str(run_path / "progress.json"),
             },
         }
         self._write_manifest(manifest)
@@ -196,11 +210,32 @@ class RunManager:
         manifest = _load_json(path)
         if include_log:
             log_path = self._run_path(run_id) / "run.log"
-            manifest["log"] = (
-                log_path.read_text(encoding="utf-8", errors="replace")
-                if log_path.is_file()
-                else ""
-            )
+            if log_path.is_file():
+                maximum_bytes = 100_000
+                with log_path.open("rb") as stream:
+                    size = stream.seek(0, os.SEEK_END)
+                    start = max(0, size - maximum_bytes)
+                    stream.seek(start)
+                    content = stream.read().decode(
+                        "utf-8", errors="replace"
+                    )
+                manifest["log"] = (
+                    ("… earlier log output omitted …\n" if start else "")
+                    + content
+                )
+            else:
+                manifest["log"] = ""
+        progress_path = self._run_path(run_id) / "progress.json"
+        if progress_path.is_file():
+            try:
+                manifest["progress"] = _load_json(progress_path)
+            except (OSError, ValueError, json.JSONDecodeError):
+                manifest["progress"] = {
+                    "stage": "unknown",
+                    "percent": 0,
+                    "message": "Progress data is unavailable",
+                    "warnings": ["The progress file could not be read"],
+                }
         return manifest
 
     def list_runs(self) -> list[dict[str, Any]]:

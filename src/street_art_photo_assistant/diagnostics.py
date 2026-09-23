@@ -88,6 +88,15 @@ def _config_summary(config: dict[str, Any]) -> dict[str, Any]:
             "visual_enabled": bool(matching.get("visual_enabled")),
             "profile": matching.get("profile"),
             "candidate_radius_m": matching.get("candidate_radius_m"),
+            "request_interval_seconds": matching.get(
+                "request_interval_seconds"
+            ),
+            "large_city_warning_markers": matching.get(
+                "large_city_warning_markers"
+            ),
+            "large_reference_warning": matching.get(
+                "large_reference_warning"
+            ),
         },
         "read_only": bool(config.get("read_only")),
     }

@@ -33,6 +33,10 @@ apply endpoints while keeping preview and reports available.
 - `matching.candidate_radius_m` limits nearby Street Art Cities candidates.
 - `matching.profile` limits candidates per cluster to 4 (`quick`), 8
   (`balanced`), or 16 (`thorough`).
+- `matching.request_interval_seconds` is the minimum delay between SAC
+  requests. Increase it to reduce request throughput.
+- `matching.large_city_warning_markers` and
+  `matching.large_reference_warning` control progress warnings for large work.
 - `paths.city_cache` and `paths.reference_images` select local provider caches.
 - Visual matching uses a fixed local ORB threshold; the profile changes only
   candidate effort, not GPS or clustering thresholds.

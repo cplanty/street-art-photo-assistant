@@ -6,14 +6,17 @@ import csv
 import json
 import os
 import re
+import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 from urllib.parse import urljoin, urlparse
 
 import requests
 from PIL import Image
 
+from . import __version__
 from .clustering import haversine_m
 from .matching import image_similarity
 from .models import PhotoCluster
@@ -21,8 +24,31 @@ from .models import PhotoCluster
 BASE_URL = "https://streetartcities.com"
 MARKERS_URL = BASE_URL + "/data/cities/{city}/markers.json"
 CITY_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-USER_AGENT = "StreetArtPhotoAssistant/0.1 (+local community tool)"
+USER_AGENT = (
+    f"StreetArtPhotoAssistant/{__version__} "
+    "(local desktop application; public SAC adapter)"
+)
 PROFILE_LIMITS = {"quick": 4, "balanced": 8, "thorough": 16}
+ProgressCallback = Callable[[str, int, int, str], None]
+
+
+@dataclass
+class RequestThrottle:
+    """Enforce a minimum interval between provider requests."""
+
+    interval_seconds: float
+    _last_request: float | None = field(default=None, init=False)
+
+    def wait(self) -> None:
+        if self.interval_seconds < 0:
+            raise ValueError("Request interval cannot be negative")
+        now = time.monotonic()
+        if self._last_request is not None:
+            remaining = self.interval_seconds - (now - self._last_request)
+            if remaining > 0:
+                time.sleep(remaining)
+                now = time.monotonic()
+        self._last_request = now
 
 
 def _atomic_json(path: Path, payload: object) -> None:
@@ -71,6 +97,7 @@ def refresh_city(
     *,
     timeout_seconds: int = 90,
     session: requests.Session | None = None,
+    throttle: RequestThrottle | None = None,
 ) -> dict[str, Any]:
     """Refresh one complete city marker cache with a single bounded request."""
 
@@ -78,6 +105,8 @@ def refresh_city(
     if not CITY_RE.fullmatch(city):
         raise ValueError("City must be a lowercase slug")
     client = session or requests.Session()
+    if throttle is not None:
+        throttle.wait()
     response = client.get(
         MARKERS_URL.format(city=city),
         headers={"User-Agent": USER_AGENT},
@@ -186,6 +215,7 @@ def cache_reference_image(
     timeout_seconds: int = 30,
     maximum_bytes: int = 20_000_000,
     session: requests.Session | None = None,
+    throttle: RequestThrottle | None = None,
 ) -> Path | None:
     """Cache one public marker image with scheme, type, and size limits."""
 
@@ -197,6 +227,8 @@ def cache_reference_image(
     if path.is_file() and path.stat().st_size:
         return path
     client = session or requests.Session()
+    if throttle is not None:
+        throttle.wait()
     response = client.get(
         image_url,
         headers={"User-Agent": USER_AGENT},
@@ -237,6 +269,8 @@ def compare_clusters(
     visual_enabled: bool,
     profile: str,
     session: requests.Session | None = None,
+    throttle: RequestThrottle | None = None,
+    progress: ProgressCallback | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Produce bounded nearby SAC evidence for each local cluster."""
 
@@ -244,8 +278,9 @@ def compare_clusters(
         raise ValueError("Unknown visual matching profile")
     mapping = load_artist_mapping(artist_mapping_path)
     markers = city_payload["markers"]
-    results = {}
-    for cluster in clusters:
+    cluster_list = list(clusters)
+    prepared = []
+    for index, cluster in enumerate(cluster_list, start=1):
         slug = mapping.get(cluster.tag.casefold(), "")
         candidates = nearby_candidates(
             cluster,
@@ -253,11 +288,44 @@ def compare_clusters(
             radius_m=candidate_radius_m,
             artist_slug=slug,
         )[:PROFILE_LIMITS[profile]]
+        prepared.append((cluster, slug, candidates))
+        if progress is not None:
+            progress(
+                "sac-matching",
+                index,
+                len(cluster_list),
+                f"Gathered nearby SAC candidates for cluster {index}",
+            )
+    image_total = (
+        sum(
+            len(candidates)
+            for cluster, _slug, candidates in prepared
+            if cluster.photos
+        )
+        if visual_enabled else 0
+    )
+    image_current = 0
+    results = {}
+    for cluster, slug, candidates in prepared:
         if visual_enabled and cluster.photos:
             for candidate in candidates:
+                image_current += 1
+                if progress is not None:
+                    progress(
+                        "sac-images",
+                        image_current,
+                        image_total,
+                        (
+                            f"Checking SAC reference image {image_current} "
+                            f"of {image_total}"
+                        ),
+                    )
                 try:
                     reference = cache_reference_image(
-                        candidate, reference_cache, session=session
+                        candidate,
+                        reference_cache,
+                        session=session,
+                        throttle=throttle,
                     )
                     similarity = (
                         image_similarity(cluster.photos[0].path, reference)

@@ -155,6 +155,15 @@
     <label>Run label <input id="run_label" placeholder="optional"></label>
     <button id="run-button" class="primary" type="button" onclick="startRun()" disabled>Refresh &amp; run</button>
     <span id="run-message" class="muted"></span>
+    <div id="run-progress-panel" class="run-progress" hidden>
+      <div class="run-progress-heading">
+        <strong id="run-progress-stage">Queued</strong>
+        <span id="run-progress-percent">0%</span>
+      </div>
+      <progress id="run-progress" max="100" value="0"></progress>
+      <p id="run-progress-detail" class="muted"></p>
+      <ul id="run-warnings" class="run-warnings"></ul>
+    </div>
     <pre id="run-log" class="log" hidden></pre>
   </section>
 
@@ -437,6 +446,7 @@ async function startRun() {
   readForm();
   byId('run-button').disabled = true;
   byId('run-message').textContent = 'Starting…';
+  byId('run-progress-panel').hidden = false;
   try {
     const result = await api('/api/runs', {
       method: 'POST',
@@ -454,8 +464,20 @@ async function pollRun() {
   try {
     const result = await api(`/api/runs/${encodeURIComponent(currentRun)}`);
     const run = result.run;
+    const progress = run.progress || {};
+    const percent = Number(progress.percent || 0);
+    byId('run-progress-panel').hidden = false;
+    byId('run-progress').value = percent;
+    byId('run-progress-stage').textContent = progress.stage || run.stage || run.status;
+    byId('run-progress-percent').textContent = `${percent.toFixed(0)}%`;
+    const count = progress.current != null && progress.total != null
+      ? ` (${progress.current}/${progress.total})`
+      : '';
+    byId('run-progress-detail').textContent = `${progress.message || ''}${count}`;
+    byId('run-warnings').innerHTML = (progress.warnings || [])
+      .map(warning => `<li>${escapeHtml(warning)}</li>`).join('');
     byId('run-message').innerHTML = run.status === 'complete'
-      ? `Complete. <a href="/runs/${encodeURIComponent(run.id)}">Open report</a>`
+      ? `Complete. <a href="/runs/${encodeURIComponent(run.id)}" target="_blank" rel="noopener">Open report</a>`
       : `${escapeHtml(run.status)} — ${escapeHtml(run.stage)}`;
     byId('run-log').hidden = !run.log;
     byId('run-log').textContent = run.log || '';

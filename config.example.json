@@ -40,7 +40,10 @@
     "city": "",
     "visual_enabled": false,
     "profile": "balanced",
-    "candidate_radius_m": 80
+    "candidate_radius_m": 80,
+    "request_interval_seconds": 0.5,
+    "large_city_warning_markers": 1000,
+    "large_reference_warning": 100
   },
   "paths": {
     "artists": "data/artists.csv",

@@ -18,6 +18,8 @@ affiliated with or endorsed by Street Art Cities.
 - Repair missing GPS from same-camera or trusted cross-camera references.
 - Preview explicit manual GPS positioning and log every metadata change.
 - Generate cancellable persistent runs and review clusters in the browser.
+- Follow durable stage, percentage, item-count, warning, and log progress while
+  a report is generated.
 - Start each report on a cluster dashboard, then review it in a resizable
   two-pane photo/tag/GPS workspace.
 - Apply artist-assisted tags to one, selected, or all cluster images through
@@ -26,6 +28,7 @@ affiliated with or endorsed by Street Art Cities.
   nearby candidates by artist, GPS, and local OpenCV evidence.
 - Inspect exact tag/GPS plans before applying them from cluster detail pages.
 - Keep all configuration, reports, and cached data on the local computer.
+- Generate inspectable, privacy-redacted diagnostic ZIPs for issue reports.
 - Use explicit typed data contracts for photos, clusters, repair plans, and
   runs.
 - Start one local web application with no account or cloud service.

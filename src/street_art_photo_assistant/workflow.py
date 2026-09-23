@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import asdict
-from datetime import date, time
+from datetime import date, datetime, time, timezone
 from pathlib import Path
+from time import sleep
 from typing import Any
 
 from .clustering import SelectionCriteria, cluster_photos, select_photos
@@ -14,6 +15,48 @@ from .matching import visual_subcluster
 from .models import PhotoSource
 from .photos import scan_sources
 from .reporting import write_cluster_report
+
+
+class ProgressReporter:
+    """Persist structured progress for CLI, web polling, and diagnostics."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.warnings: list[str] = []
+
+    def update(
+        self,
+        *,
+        stage: str,
+        percent: float,
+        message: str,
+        current: int | None = None,
+        total: int | None = None,
+        warning: str | None = None,
+    ) -> None:
+        new_warning = bool(warning and warning not in self.warnings)
+        if new_warning and warning:
+            self.warnings.append(warning)
+        _atomic_json(self.path, {
+            "version": 1,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "stage": stage,
+            "percent": max(0, min(100, round(percent, 1))),
+            "message": message,
+            "current": current,
+            "total": total,
+            "warnings": self.warnings,
+        })
+        count = (
+            f" ({current}/{total})"
+            if current is not None and total is not None else ""
+        )
+        print(
+            f"[{percent:5.1f}%] {stage}: {message}{count}",
+            flush=True,
+        )
+        if new_warning and warning:
+            print(f"WARNING: {warning}", flush=True)
 
 
 def _optional_date(value: object) -> date | None:
@@ -37,7 +80,14 @@ def _atomic_json(path: Path, payload: object) -> None:
     with temporary.open("w", encoding="utf-8", newline="\n") as stream:
         json.dump(payload, stream, indent=2, ensure_ascii=False)
         stream.write("\n")
-    os.replace(temporary, path)
+    for attempt in range(5):
+        try:
+            os.replace(temporary, path)
+            break
+        except PermissionError:
+            if attempt == 4:
+                raise
+            sleep(0.02 * (attempt + 1))
 
 
 def sources_from_config(
@@ -96,8 +146,29 @@ def run_offline_clustering(
 ) -> dict[str, Any]:
     """Run the complete network-free preview and clustering workflow."""
 
+    output_directory.mkdir(parents=True, exist_ok=True)
+    progress = ProgressReporter(output_directory / "progress.json")
+    progress.update(
+        stage="scanning",
+        percent=5,
+        message="Reading photo metadata from configured sources",
+    )
     _scanned, selected, preview = scan_and_select(config, config_root)
+    progress.update(
+        stage="selection",
+        percent=25,
+        message=(
+            f"Selected {preview.selected} of {preview.scanned} scanned photos"
+        ),
+        current=preview.selected,
+        total=preview.scanned,
+    )
     clustering = config["clustering"]
+    progress.update(
+        stage="clustering",
+        percent=35,
+        message="Grouping selected photos by tag and location",
+    )
     clusters = cluster_photos(
         selected,
         radius_m=float(clustering["radius_m"]),
@@ -107,21 +178,103 @@ def run_offline_clustering(
         wall_tag=str(clustering["wall_tag"]),
     )
     if visual:
+        progress.update(
+            stage="local-visual",
+            percent=42,
+            message=f"Visually checking {len(clusters)} local cluster(s)",
+            current=0,
+            total=len(clusters),
+        )
         clusters = visual_subcluster(clusters)
 
-    output_directory.mkdir(parents=True, exist_ok=True)
+    progress.update(
+        stage="clustered",
+        percent=50,
+        message=f"Created {len(clusters)} cluster(s)",
+        current=len(clusters),
+        total=len(clusters),
+    )
     _atomic_json(output_directory / "preview.json", asdict(preview))
     matching = config["matching"]
     city = None
     evidence = None
     if matching.get("street_art_cities_enabled"):
-        from .sac import compare_clusters, refresh_city
+        from .sac import (
+            USER_AGENT,
+            RequestThrottle,
+            compare_clusters,
+            refresh_city,
+        )
 
         city = str(matching.get("city") or "").strip().lower()
         paths = config["paths"]
-        city_payload = refresh_city(
-            city, _resolve(config_root, paths["city_cache"])
+        throttle = RequestThrottle(
+            float(matching["request_interval_seconds"])
         )
+        progress.update(
+            stage="sac-refresh",
+            percent=55,
+            message=(
+                f"Refreshing Street Art Cities markers for {city} "
+                f"with User-Agent: {USER_AGENT}"
+            ),
+        )
+        city_payload = refresh_city(
+            city,
+            _resolve(config_root, paths["city_cache"]),
+            throttle=throttle,
+        )
+        marker_count = len(city_payload["markers"])
+        marker_warning = None
+        if marker_count >= int(
+            matching["large_city_warning_markers"]
+        ):
+            marker_warning = (
+                f"Large city catalogue: {marker_count} markers were returned "
+                "in the complete city response; local comparison may take time."
+            )
+        progress.update(
+            stage="sac-matching",
+            percent=65,
+            message=(
+                f"Comparing {len(clusters)} cluster(s) with "
+                f"{marker_count} marker(s)"
+            ),
+            current=0,
+            total=len(clusters),
+            warning=marker_warning,
+        )
+
+        def sac_progress(
+            stage: str,
+            current: int,
+            total: int,
+            message: str,
+        ) -> None:
+            ratio = current / total if total else 1
+            if stage == "sac-images":
+                percent = 75 + 17 * ratio
+                warning = (
+                    (
+                        f"Large reference workload: {total} nearby SAC "
+                        "images may be downloaded or read from cache."
+                    )
+                    if total >= int(
+                        matching["large_reference_warning"]
+                    ) else None
+                )
+            else:
+                percent = 65 + 10 * ratio
+                warning = None
+            progress.update(
+                stage=stage,
+                percent=percent,
+                message=message,
+                current=current,
+                total=total,
+                warning=warning,
+            )
+
         evidence = compare_clusters(
             clusters,
             city_payload,
@@ -132,13 +285,43 @@ def run_offline_clustering(
             candidate_radius_m=float(matching["candidate_radius_m"]),
             visual_enabled=bool(matching.get("visual_enabled")),
             profile=str(matching["profile"]),
+            throttle=throttle,
+            progress=sac_progress,
         )
+        progress.update(
+            stage="sac-matching",
+            percent=92,
+            message=f"Compared {len(clusters)} cluster(s)",
+            current=len(clusters),
+            total=len(clusters),
+        )
+    else:
+        progress.update(
+            stage="reporting",
+            percent=85,
+            message="Street Art Cities matching is disabled",
+        )
+    progress.update(
+        stage="reporting",
+        percent=96,
+        message="Writing JSON and Markdown reports",
+    )
     write_cluster_report(
         clusters,
         output_directory / "report.json",
         output_directory / "report.md",
         city=city,
         sac_evidence=evidence,
+    )
+    progress.update(
+        stage="complete",
+        percent=100,
+        message=(
+            f"Report complete: {len(clusters)} cluster(s), "
+            f"{preview.selected} photo(s)"
+        ),
+        current=len(clusters),
+        total=len(clusters),
     )
     return {
         "scanned": preview.scanned,

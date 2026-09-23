@@ -9,6 +9,8 @@ from PIL import Image
 
 from street_art_photo_assistant.models import PhotoCluster
 from street_art_photo_assistant.sac import (
+    USER_AGENT,
+    RequestThrottle,
     cache_reference_image,
     cached_cities,
     compare_clusters,
@@ -77,6 +79,10 @@ class SACTests(unittest.TestCase):
         self.assertEqual(payload, saved)
         self.assertEqual(["test-city"], cities)
         session.get.assert_called_once()
+        self.assertEqual(
+            USER_AGENT,
+            session.get.call_args.kwargs["headers"]["User-Agent"],
+        )
 
     def test_nearby_candidates_rank_same_artist_first(self):
         cluster = PhotoCluster(
@@ -212,6 +218,7 @@ class SACTests(unittest.TestCase):
                 content=b"text", content_type="text/plain"
             )
             cluster.photos.append(Mock(path=root / "photo.jpg"))
+            progress = []
 
             result = compare_clusters(
                 [cluster],
@@ -222,11 +229,31 @@ class SACTests(unittest.TestCase):
                 visual_enabled=True,
                 profile="balanced",
                 session=session,
+                progress=lambda *event: progress.append(event),
             )
 
         candidate = result["cluster"]["candidates"][0]
         self.assertIn("not an image", candidate["visual_error"])
         self.assertIsNone(candidate["visual_similarity"])
+        self.assertEqual("sac-matching", progress[0][0])
+        self.assertEqual("sac-images", progress[-1][0])
+
+    def test_request_throttle_enforces_minimum_interval(self):
+        throttle = RequestThrottle(0.5)
+        with (
+            patch(
+                "street_art_photo_assistant.sac.time.monotonic",
+                side_effect=[10.0, 10.1, 10.5],
+            ),
+            patch(
+                "street_art_photo_assistant.sac.time.sleep"
+            ) as sleep,
+        ):
+            throttle.wait()
+            throttle.wait()
+
+        sleep.assert_called_once()
+        self.assertAlmostEqual(0.4, sleep.call_args.args[0])
 
     def test_disabled_matching_workflow_never_calls_network(self):
         from copy import deepcopy

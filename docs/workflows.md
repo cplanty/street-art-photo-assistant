@@ -14,6 +14,10 @@
 Changing any source or filter invalidates the preview, GPS plan, and report
 action. Disabled actions are grey.
 
+Generate displays the persisted stage, percentage, item count, warnings, and a
+bounded live log tail. Progress survives a page refresh because each run writes
+`progress.json`.
+
 The report opens on the cluster dashboard. Selecting a cluster opens a
 resizable two-pane workspace: local photos and tag controls are on the left;
 GPS positioning and optional Street Art Cities evidence are on the right.
@@ -60,5 +64,5 @@ display context; its tiles are never used as proposal or matching evidence.
 ## Runs
 
 Each run owns a directory containing its config snapshot, manifest, command,
-log, preview, JSON report, and Markdown report. Active runs can be cancelled.
-Inactive runs can be deleted from the generator after confirmation.
+log, progress, preview, JSON report, and Markdown report. Active runs can be
+cancelled. Inactive runs can be deleted from the generator after confirmation.

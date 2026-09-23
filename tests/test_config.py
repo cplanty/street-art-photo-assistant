@@ -53,6 +53,16 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "lowercase slug"):
                 load_config(path)
 
+    def test_request_interval_cannot_be_negative(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "config.local.json"
+            path.write_text(json.dumps({
+                "version": 1,
+                "matching": {"request_interval_seconds": -1},
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "cannot be negative"):
+                load_config(path)
+
 
 if __name__ == "__main__":
     unittest.main()

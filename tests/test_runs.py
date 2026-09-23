@@ -40,6 +40,8 @@ class RunManagerTests(unittest.TestCase):
             self.assertEqual("complete", run["status"], run.get("log"))
             self.assertEqual(1, run["selected_photos"])
             self.assertEqual(1, run["clusters"])
+            self.assertEqual(100, run["progress"]["percent"])
+            self.assertEqual("complete", run["progress"]["stage"])
             self.assertEqual(1, len(manager.report(run["id"])["clusters"]))
             manager.delete(run["id"])
             self.assertEqual([], manager.list_runs())
@@ -53,4 +55,3 @@ class RunManagerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

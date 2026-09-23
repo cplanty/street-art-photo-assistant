@@ -41,6 +41,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "visual_enabled": False,
         "profile": "balanced",
         "candidate_radius_m": 80,
+        "request_interval_seconds": 0.5,
+        "large_city_warning_markers": 1000,
+        "large_reference_warning": 100,
     },
     "paths": {
         "artists": "data/artists.csv",
@@ -98,6 +101,16 @@ def validate_config(config: dict[str, Any]) -> None:
         "quick", "balanced", "thorough"
     }:
         raise ValueError("matching.profile is invalid")
+    if float(config["matching"]["request_interval_seconds"]) < 0:
+        raise ValueError("matching.request_interval_seconds cannot be negative")
+    if int(config["matching"]["large_city_warning_markers"]) <= 0:
+        raise ValueError(
+            "matching.large_city_warning_markers must be positive"
+        )
+    if int(config["matching"]["large_reference_warning"]) <= 0:
+        raise ValueError(
+            "matching.large_reference_warning must be positive"
+        )
     matching_enabled = bool(
         config["matching"].get("street_art_cities_enabled")
     )

@@ -56,6 +56,10 @@ file, before value, and after value. `status: applying` means earlier listed
 writes completed before a later interruption; `status: complete` means the
 entire plan finished.
 
+Each run also owns `progress.json`: stage, percentage, detail message, optional
+current/total item counts, accumulated warnings, and update time. The web page
+polls this file rather than inferring progress from console text.
+
 ## Diagnostic bundle
 
 Diagnostic ZIPs contain environment, configuration summary, run summaries,

@@ -79,6 +79,7 @@ class WebTests(unittest.TestCase):
         self.assertIn("Preview selection", page)
         self.assertIn("Apply previewed GPS fixes", page)
         self.assertIn("Refresh &amp; run", page)
+        self.assertIn('id="run-progress"', page)
         self.assertIn("Generate diagnostic package", page)
         self.assertIn(
             "Preview complete. You can now generate report",
@@ -168,6 +169,8 @@ class WebTests(unittest.TestCase):
             time.sleep(0.05)
 
         self.assertEqual("complete", status["status"], status.get("log"))
+        self.assertEqual(100, status["progress"]["percent"])
+        self.assertEqual("complete", status["progress"]["stage"])
         dashboard = self.client.get(f"/runs/{started['id']}")
         self.assertEqual(200, dashboard.status_code)
         self.assertIn(
