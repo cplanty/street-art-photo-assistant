@@ -27,8 +27,12 @@ visual = [
 street-art-photo-assistant = "street_art_photo_assistant.__main__:main"
 
 [tool.setuptools.package-data]
-street_art_photo_assistant = ["templates/*.html", "static/*.css"]
+street_art_photo_assistant = [
+  "templates/*.html",
+  "static/*.css",
+  "static/*.js",
+  "static/*.txt",
+]
 
 [tool.unittest]
 start-directory = "tests"
-

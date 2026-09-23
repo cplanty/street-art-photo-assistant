@@ -32,10 +32,15 @@ local folders
 - `runs.py` launches package subcommands without a shell and persists
   cancellable run manifests, logs, reports, summaries, and safe deletion.
 - `web.py` owns local routes, selection tokens, persisted edit plans, path
-  boundaries, and templates.
+  boundaries, artist-assisted review data, local file actions, and templates.
 
 The workflow imports `sac.py` lazily only for an explicitly enabled target.
 Matching-disabled runs make no Street Art Cities requests.
+
+Leaflet 1.9.4 is bundled under its BSD-2-Clause license for local GPS display.
+Offline reports default to a generated coordinate grid. Optional
+OpenStreetMap tiles are presentation only and do not enter the matching
+pipeline.
 
 ## Write boundary
 

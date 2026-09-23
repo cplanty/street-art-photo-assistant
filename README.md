@@ -18,6 +18,10 @@ affiliated with or endorsed by Street Art Cities.
 - Repair missing GPS from same-camera or trusted cross-camera references.
 - Preview explicit manual GPS positioning and log every metadata change.
 - Generate cancellable persistent runs and review clusters in the browser.
+- Start each report on a cluster dashboard, then review it in a resizable
+  two-pane photo/tag/GPS workspace.
+- Apply artist-assisted tags to one, selected, or all cluster images through
+  exact preview plans.
 - Optionally refresh a complete Street Art Cities city marker set and compare
   nearby candidates by artist, GPS, and local OpenCV evidence.
 - Inspect exact tag/GPS plans before applying them from cluster detail pages.

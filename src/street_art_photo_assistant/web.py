@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import os
+import subprocess
 import uuid
 from copy import deepcopy
 from dataclasses import asdict
@@ -64,6 +66,23 @@ def _inside(path: Path, roots: list[Path]) -> bool:
         resolved == root or resolved.is_relative_to(root)
         for root in roots
     )
+
+
+def _artist_tags(path: Path) -> tuple[list[str], dict[str, list[str]]]:
+    tags: list[str] = []
+    by_slug: dict[str, list[str]] = {}
+    if not path.is_file():
+        return tags, by_slug
+    with path.open(encoding="utf-8-sig", newline="") as stream:
+        for row in csv.DictReader(stream, delimiter=";"):
+            tag = str(row.get("tag") or "").strip()
+            slug = str(row.get("streetartcities_slug") or "").strip()
+            if not tag:
+                continue
+            tags.append(tag)
+            if slug:
+                by_slug.setdefault(slug, []).append(tag)
+    return sorted(set(tags), key=str.casefold), by_slug
 
 
 def _choose_folder(initial: str) -> str:
@@ -160,6 +179,12 @@ def create_app(
                 return cluster
         raise ValueError("Unknown cluster")
 
+    def cluster_paths(cluster: dict[str, Any]) -> list[Path]:
+        return [
+            Path(photo["path"]).resolve()
+            for photo in [*cluster["photos"], *cluster["context_photos"]]
+        ]
+
     def refreshed_cluster(run_id: str, cluster_id: str) -> dict[str, Any]:
         cluster = deepcopy(report_cluster(run_id, cluster_id))
         located = []
@@ -170,6 +195,7 @@ def create_app(
                     Path(stored["path"]), str(stored.get("source") or "")
                 )
                 payload = photo.to_dict()
+                payload["filename"] = photo.path.name
                 refreshed.append(payload)
                 if photo.has_gps:
                     located.append(photo)
@@ -267,7 +293,17 @@ def create_app(
             raise ValueError(f"Local path does not exist: {path}")
         if not hasattr(os, "startfile"):
             raise RuntimeError("Opening local files is supported on Windows")
-        os.startfile(os.path.normpath(path))  # type: ignore[attr-defined]
+        action = str(payload.get("action") or "open")
+        if action == "explorer":
+            subprocess.Popen([
+                "explorer.exe",
+                "/select,",
+                os.path.normpath(path),
+            ])
+        elif action == "open":
+            os.startfile(os.path.normpath(path))  # type: ignore[attr-defined]
+        else:
+            raise ValueError("Unknown local open action")
         return jsonify({"ok": True})
 
     @app.post("/api/preview")
@@ -386,10 +422,36 @@ def create_app(
     @app.get("/runs/<run_id>/clusters/<cluster_id>")
     def cluster_review(run_id: str, cluster_id: str):
         cluster = refreshed_cluster(run_id, cluster_id)
+        artists_path = resolve_local_path(
+            config_root, str(current_config()["paths"]["artists"])
+        )
+        known_tags, tags_by_slug = _artist_tags(artists_path)
+        clustering = current_config()["clustering"]
+        proposals = [
+            str(clustering["unknown_tag"]),
+            str(clustering["wall_tag"]),
+        ]
+        if cluster["tag"] not in proposals:
+            proposals.insert(0, str(cluster["tag"]))
+        evidence = cluster.get("street_art_cities") or {}
+        for candidate in evidence.get("candidates") or []:
+            for tag in tags_by_slug.get(
+                str(candidate.get("artist_slug") or ""), []
+            ):
+                if tag not in proposals:
+                    proposals.append(tag)
+        ids = [
+            item["id"] for item in manager.report(run_id)["clusters"]
+        ]
+        position = ids.index(cluster_id)
         return render_template(
             "cluster.html",
             run_id=run_id,
             cluster=cluster,
+            known_tags=known_tags,
+            tag_proposals=proposals,
+            previous_id=ids[(position - 1) % len(ids)],
+            next_id=ids[(position + 1) % len(ids)],
             read_only=bool(current_config().get("read_only")),
         )
 
@@ -397,10 +459,17 @@ def create_app(
     def tag_preview(run_id: str, cluster_id: str):
         cluster = report_cluster(run_id, cluster_id)
         payload = request.get_json(force=True)
-        paths = [
-            Path(photo["path"])
-            for photo in [*cluster["photos"], *cluster["context_photos"]]
-        ]
+        allowed = cluster_paths(cluster)
+        requested = payload.get("paths")
+        if requested is None:
+            paths = allowed
+        else:
+            requested_paths = [Path(path).resolve() for path in requested]
+            if any(path not in allowed for path in requested_paths):
+                raise ValueError("Selected photo is outside this cluster")
+            paths = requested_paths
+        if not paths:
+            raise ValueError("Select at least one cluster photo")
         plan = build_tag_edit_plan(
             paths,
             add=payload.get("add") or [],
@@ -415,13 +484,18 @@ def create_app(
     def manual_gps_preview(run_id: str, cluster_id: str):
         cluster = report_cluster(run_id, cluster_id)
         payload = request.get_json(force=True)
-        selected_paths = {
-            str(Path(path).resolve()) for path in payload.get("paths") or []
-        }
+        requested_paths = payload.get("paths")
+        selected_paths = (
+            {
+                str(Path(path).resolve())
+                for path in requested_paths
+            }
+            if requested_paths is not None else None
+        )
         photos = []
         for item in [*cluster["photos"], *cluster["context_photos"]]:
             path = Path(item["path"]).resolve()
-            if not selected_paths or str(path) in selected_paths:
+            if selected_paths is None or str(path) in selected_paths:
                 photos.append(read_photo(path, str(item.get("source") or "")))
         if not photos:
             raise ValueError("Select at least one cluster photo")
@@ -462,6 +536,17 @@ def create_app(
         next_id = ids[(ids.index(cluster_id) + 1) % len(ids)]
         return redirect(url_for(
             "cluster_review", run_id=run_id, cluster_id=next_id
+        ))
+
+    @app.get("/runs/<run_id>/clusters/<cluster_id>/previous")
+    def previous_cluster(run_id: str, cluster_id: str):
+        clusters = manager.report(run_id)["clusters"]
+        ids = [cluster["id"] for cluster in clusters]
+        if cluster_id not in ids:
+            raise ValueError("Unknown cluster")
+        previous_id = ids[(ids.index(cluster_id) - 1) % len(ids)]
+        return redirect(url_for(
+            "cluster_review", run_id=run_id, cluster_id=previous_id
         ))
 
     return app

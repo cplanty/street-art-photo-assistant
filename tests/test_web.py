@@ -4,11 +4,12 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 from shutil import copy2
+from unittest.mock import Mock, patch
 
 from street_art_photo_assistant.config import DEFAULT_CONFIG
 from street_art_photo_assistant.photos import read_photo
 from street_art_photo_assistant.runs import RunManager
-from street_art_photo_assistant.web import create_app
+from street_art_photo_assistant.web import _choose_folder, create_app
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -48,6 +49,22 @@ class WebTests(unittest.TestCase):
         response = self.client.post("/api/preview", json=self.config)
         self.assertEqual(200, response.status_code, response.get_data(as_text=True))
         return response.get_json()
+
+    def test_native_folder_picker_is_parented_and_topmost(self):
+        root = Mock()
+        with (
+            patch("tkinter.Tk", return_value=root),
+            patch(
+                "tkinter.filedialog.askdirectory",
+                return_value=str(self.photos),
+            ) as askdirectory,
+        ):
+            selected = _choose_folder(str(self.photos))
+
+        self.assertEqual(str(self.photos), selected)
+        root.attributes.assert_called_once_with("-topmost", True)
+        askdirectory.assert_called_once()
+        self.assertIs(root, askdirectory.call_args.kwargs["parent"])
 
     def test_health_and_generator_structure(self):
         self.assertEqual(
@@ -136,15 +153,29 @@ class WebTests(unittest.TestCase):
             time.sleep(0.05)
 
         self.assertEqual("complete", status["status"], status.get("log"))
-        self.assertEqual(200, self.client.get(f"/runs/{started['id']}").status_code)
+        dashboard = self.client.get(f"/runs/{started['id']}")
+        self.assertEqual(200, dashboard.status_code)
+        self.assertIn(
+            "Cluster dashboard",
+            dashboard.get_data(as_text=True),
+        )
         report = self.manager.report(started["id"])
         cluster_id = report["clusters"][0]["id"]
-        self.assertEqual(
-            200,
-            self.client.get(
-                f"/runs/{started['id']}/clusters/{cluster_id}"
-            ).status_code,
+        detail = self.client.get(
+            f"/runs/{started['id']}/clusters/{cluster_id}"
         )
+        self.assertEqual(200, detail.status_code)
+        detail_page = detail.get_data(as_text=True)
+        self.assertIn('id="detail-view"', detail_page)
+        self.assertIn('id="gps-map"', detail_page)
+        self.assertIn('/static/leaflet.js', detail_page)
+        self.assertNotIn("unpkg.com", detail_page)
+        self.assertIn("Offline coordinate grid", detail_page)
+        self.assertIn("Add to all", detail_page)
+        self.assertIn("Add to selected", detail_page)
+        self.assertIn("Show in Explorer", detail_page)
+        self.assertIn("_unknown", detail_page)
+        self.assertIn("_wall", detail_page)
         deleted = self.client.delete(f"/api/runs/{started['id']}")
         self.assertEqual(200, deleted.status_code)
         self.assertEqual([], self.manager.list_runs())
@@ -181,6 +212,58 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(403, response.status_code)
         self.assertFalse(read_photo(self.missing, "Camera").has_gps)
+
+    def test_cluster_tag_preview_accepts_only_selected_cluster_photos(self):
+        preview = self.preview()
+        started = self.client.post("/api/runs", json={
+            "config": self.config,
+            "preview_token": preview["token"],
+        }).get_json()["run"]
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            status = self.manager.status(started["id"])
+            if status["status"] not in {"queued", "running"}:
+                break
+            time.sleep(0.05)
+        report = self.manager.report(started["id"])
+        cluster = report["clusters"][0]
+        photo_path = cluster["photos"][0]["path"]
+        endpoint = (
+            f"/api/runs/{started['id']}/clusters/{cluster['id']}/tags/preview"
+        )
+
+        response = self.client.post(endpoint, json={
+            "paths": [photo_path],
+            "add": ["Synthetic Artist"],
+            "remove": [],
+        })
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(1, len(response.get_json()["plan"]["items"]))
+
+        rejected = self.client.post(endpoint, json={
+            "paths": [str(self.root / "outside.jpg")],
+            "add": ["Synthetic Artist"],
+            "remove": [],
+        })
+        self.assertEqual(400, rejected.status_code)
+        self.assertIn("outside this cluster", rejected.get_json()["error"])
+
+    def test_local_explorer_action_is_confined_to_photo_sources(self):
+        with patch(
+            "street_art_photo_assistant.web.subprocess.Popen"
+        ) as popen:
+            response = self.client.post("/api/open-local", json={
+                "action": "explorer",
+                "target": str(self.located),
+            })
+        self.assertEqual(200, response.status_code)
+        popen.assert_called_once()
+
+        rejected = self.client.post("/api/open-local", json={
+            "action": "explorer",
+            "target": str(self.root / "outside.jpg"),
+        })
+        self.assertEqual(400, rejected.status_code)
 
 
 if __name__ == "__main__":

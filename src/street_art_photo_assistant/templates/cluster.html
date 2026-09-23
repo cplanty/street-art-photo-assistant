@@ -5,85 +5,159 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ cluster.tag }} — Street Art Photo Assistant</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='leaflet.css') }}">
+  <script src="{{ url_for('static', filename='leaflet.js') }}"></script>
 </head>
 <body>
-<main>
-  <header class="page-header">
-    <div>
-      <a href="{{ url_for('run_review', run_id=run_id) }}">← All clusters</a>
-      <h1>{{ cluster.tag }}</h1>
-      <p><code>{{ cluster.id }}</code></p>
-    </div>
-    <a class="button" href="{{ url_for('next_cluster', run_id=run_id, cluster_id=cluster.id) }}">Next →</a>
+<main class="review-main">
+  <nav class="review-nav">
+    <a class="button" href="{{ url_for('cluster_review', run_id=run_id, cluster_id=previous_id) }}">← Previous</a>
+    <a class="button" href="{{ url_for('run_review', run_id=run_id) }}">Cluster dashboard</a>
+    <a class="button" href="{{ url_for('cluster_review', run_id=run_id, cluster_id=next_id) }}">Next →</a>
+  </nav>
+  <header>
+    <h1>{{ cluster.tag }}</h1>
+    <p class="muted"><code>{{ cluster.id }}</code> · {{ cluster.photos|length }} primary · {{ cluster.context_photos|length }} context</p>
   </header>
 
-  <section class="card">
-    <h2>GPS positions</h2>
-    <svg id="gps-plot" class="gps-plot" viewBox="0 0 600 220" role="img" aria-label="Relative photo positions"></svg>
-    <div class="form-row">
-      <label>Latitude <input id="latitude" type="number" step="any" value="{{ cluster.latitude if cluster.latitude is not none else '' }}"></label>
-      <label>Longitude <input id="longitude" type="number" step="any" value="{{ cluster.longitude if cluster.longitude is not none else '' }}"></label>
-      <button type="button" onclick="previewGpsMove()" {% if read_only %}disabled{% endif %}>Preview position</button>
-    </div>
-    <p id="gps-message" class="muted"></p>
-  </section>
+  <datalist id="known-tags">
+  {% for tag in known_tags %}<option value="{{ tag }}">{% endfor %}
+  </datalist>
 
-  <section class="card">
-    <h2>Tag editing</h2>
-    <div class="form-row">
-      <label>Add <input id="add-tag"></label>
-      <label>Remove <input id="remove-tag"></label>
-      <button type="button" onclick="previewTags()" {% if read_only %}disabled{% endif %}>Preview tag changes</button>
-    </div>
-    <p id="tag-message" class="muted"></p>
-  </section>
+  <div id="detail-view" class="detail-columns">
+    <div class="detail-column">
+      <section class="card">
+        <h2>Your photos</h2>
+        <div class="cluster-tag-tools">
+          <label>Tag to add
+            <input id="cluster-tag-input" list="known-tags" autocomplete="off" placeholder="artist or free-form tag">
+          </label>
+          <button type="button" onclick="addInputTag(false)" {% if read_only %}disabled{% endif %}>Add to all</button>
+          <button type="button" onclick="addInputTag(true)" {% if read_only %}disabled{% endif %}>Add to selected</button>
+          <button type="button" onclick="setPhotoSelection(true)">Select all</button>
+          <button type="button" onclick="setPhotoSelection(false)">Select none</button>
+        </div>
+        <div class="tag-proposals">
+          <strong>Tag proposals:</strong>
+          {% for tag in tag_proposals %}
+            <button type="button" class="proposal-chip" onclick="chooseProposal({{ tag|tojson }})">{{ tag }}</button>
+          {% endfor %}
+          <span class="muted">Choose a proposal, then add it to all or selected images.</span>
+        </div>
+        <div id="tag-plan" class="plan-preview"></div>
 
-  <section class="card">
-    <h2>Your photos</h2>
-    <div class="photo-grid">
-    {% for photo in cluster.photos %}
-      <figure>
-        <label class="check"><input class="gps-photo" type="checkbox" value="{{ photo.path }}" checked> Apply cluster position</label>
-        <img src="{{ url_for('photo', path=photo.path) }}" alt="{{ photo.path|e }}">
-        <figcaption>{{ photo.path }}<br>{{ photo.tags|join(', ') or 'no tags' }}</figcaption>
-      </figure>
-    {% endfor %}
-    {% for photo in cluster.context_photos %}
-      <figure class="context">
-        <label class="check"><input class="gps-photo" type="checkbox" value="{{ photo.path }}"> Context photo</label>
-        <img src="{{ url_for('photo', path=photo.path) }}" alt="{{ photo.path|e }}">
-        <figcaption>{{ photo.path }}<br>{{ photo.tags|join(', ') or 'no tags' }}</figcaption>
-      </figure>
-    {% endfor %}
+        <div class="photo-list">
+        {% for photo in cluster.photos + cluster.context_photos %}
+          {% set is_context = photo in cluster.context_photos %}
+          <article class="review-photo{% if is_context %} context{% endif %}" data-path="{{ photo.path }}">
+            <div class="photo-media">
+              <img class="review-photo-image" src="{{ url_for('photo', path=photo.path) }}" alt="{{ photo.filename }}">
+            </div>
+            <div class="photo-actions">
+              <label class="check">
+                <input class="photo-select" type="checkbox" value="{{ photo.path }}" {% if not is_context %}checked{% endif %}>
+                {% if is_context %}Context image{% else %}Select image{% endif %}
+              </label>
+              <h3>{{ photo.filename }}</h3>
+              <p class="muted">{{ photo.source }}{% if photo.captured_at %} · {{ photo.captured_at }}{% endif %}</p>
+              <div class="tags">
+                <strong>Existing tags:</strong>
+                {% for tag in photo.tags %}
+                  <span class="tag">{{ tag }}<button type="button" title="Remove from this image" onclick='previewTagChange([{{ photo.path|tojson }}], [], [{{ tag|tojson }}])' {% if read_only %}disabled{% endif %}>×</button></span>
+                {% else %}
+                  <span class="muted">none</span>
+                {% endfor %}
+              </div>
+              <div class="photo-proposals">
+                <strong>Proposals:</strong>
+                {% for tag in tag_proposals %}
+                  <button type="button" class="proposal-chip" onclick='previewTagChange([{{ photo.path|tojson }}], [{{ tag|tojson }}], [])' {% if read_only %}disabled{% endif %}>{{ tag }}</button>
+                {% endfor %}
+              </div>
+              <div class="input-action">
+                <input class="photo-tag-input" list="known-tags" autocomplete="off" placeholder="add tag…">
+                <button type="button" onclick="addPhotoTag(this)" {% if read_only %}disabled{% endif %}>Add</button>
+              </div>
+              <div class="photo-file-actions">
+                <button type="button" onclick='openLocalPath("explorer", {{ photo.path|tojson }})'>Show in Explorer</button>
+                <button type="button" onclick='openLocalPath("open", {{ photo.path|tojson }})'>Open file</button>
+                <a class="button" href="{{ url_for('photo', path=photo.path) }}" target="_blank" rel="noopener">Full size ↗</a>
+              </div>
+              <p class="muted path">{{ photo.path }}</p>
+            </div>
+            <div class="photo-image-resizer" role="separator" aria-orientation="horizontal" title="Drag to resize photo previews"></div>
+          </article>
+        {% endfor %}
+        </div>
+      </section>
     </div>
-  </section>
 
-  {% if cluster.street_art_cities %}
-  <section class="card">
-    <h2>Street Art Cities evidence</h2>
-    <p><strong>{{ cluster.street_art_cities.status }}</strong> — {{ cluster.street_art_cities.recommendation }}</p>
-    <div class="cluster-grid">
-    {% for candidate in cluster.street_art_cities.candidates %}
-      <article>
-        {% if candidate.cached_image %}<img src="{{ url_for('reference', path=candidate.cached_image) }}" alt="Street Art Cities reference">{% endif %}
-        <h3>{{ candidate.artist or candidate.title or candidate.marker_id }}</h3>
-        <p>{{ candidate.distance_m }} m · {{ candidate.status }}</p>
-        {% if candidate.visual_similarity is defined and candidate.visual_similarity is not none %}<p>Visual similarity: {{ '%.3f'|format(candidate.visual_similarity) }}</p>{% endif %}
-        {% if candidate.visual_error %}<p class="muted">Reference image unavailable: {{ candidate.visual_error }}</p>{% endif %}
-        <a href="{{ candidate.url }}" target="_blank" rel="noopener noreferrer">Open marker</a>
-      </article>
-    {% else %}
-      <p class="muted">No nearby marker.</p>
-    {% endfor %}
+    <div id="column-resizer" class="column-resizer" role="separator" aria-orientation="vertical" title="Drag to resize columns"></div>
+
+    <div class="detail-column">
+      <section class="card gps-map-card">
+        <h2>GPS position utility</h2>
+        <p class="muted">Blue points are primary photos, grey points are context images, and green points are Street Art Cities markers. Drag the red target, select images on the left, then preview the exact GPS change.</p>
+        <div id="gps-map"></div>
+        <div class="form-row">
+          <label>Map background
+            <select id="gps-basemap">
+              <option value="offline">Offline coordinate grid</option>
+              <option value="osm">OpenStreetMap (network)</option>
+            </select>
+          </label>
+          <label>Latitude <input id="latitude" type="number" step="any" value="{{ cluster.latitude if cluster.latitude is not none else '' }}"></label>
+          <label>Longitude <input id="longitude" type="number" step="any" value="{{ cluster.longitude if cluster.longitude is not none else '' }}"></label>
+          <button type="button" onclick="previewGpsMove()" {% if read_only %}disabled{% endif %}>Preview selected images</button>
+          <button type="button" onclick="resetGpsTarget()">Reset target</button>
+        </div>
+        <div id="gps-plan" class="plan-preview"></div>
+      </section>
+
+      {% if cluster.street_art_cities %}
+      <section class="card">
+        <h2>Street Art Cities evidence</h2>
+        <p><strong>{{ cluster.street_art_cities.status }}</strong> — {{ cluster.street_art_cities.recommendation }}</p>
+        <div class="sac-candidates">
+        {% for candidate in cluster.street_art_cities.candidates %}
+          <article class="sac-candidate">
+            {% if candidate.cached_image %}<a href="{{ url_for('reference', path=candidate.cached_image) }}" target="_blank" rel="noopener"><img src="{{ url_for('reference', path=candidate.cached_image) }}" alt="Street Art Cities reference"></a>{% endif %}
+            <div>
+              <h3>{{ candidate.artist or candidate.title or candidate.marker_id }}</h3>
+              <p>{{ candidate.distance_m }} m · {{ candidate.status }}{% if candidate.tag_match %} · artist match{% endif %}</p>
+              {% if candidate.visual_similarity is defined and candidate.visual_similarity is not none %}<p>Visual similarity: {{ '%.3f'|format(candidate.visual_similarity) }}</p>{% endif %}
+              {% if candidate.visual_error %}<p class="muted">Reference image unavailable: {{ candidate.visual_error }}</p>{% endif %}
+              <a href="{{ candidate.url }}" target="_blank" rel="noopener noreferrer">Open SAC marker ↗</a>
+            </div>
+          </article>
+        {% else %}
+          <p class="muted">No nearby Street Art Cities marker.</p>
+        {% endfor %}
+        </div>
+      </section>
+      {% endif %}
     </div>
-  </section>
-  {% endif %}
+  </div>
+
+  <nav class="review-nav">
+    <a class="button" href="{{ url_for('cluster_review', run_id=run_id, cluster_id=previous_id) }}">← Previous</a>
+    <a class="button" href="{{ url_for('run_review', run_id=run_id) }}">Cluster dashboard</a>
+    <a class="button" href="{{ url_for('cluster_review', run_id=run_id, cluster_id=next_id) }}">Next →</a>
+  </nav>
 </main>
+
 <script>
 const runId = {{ run_id|tojson }};
 const clusterId = {{ cluster.id|tojson }};
 const cluster = {{ cluster|tojson }};
-let pendingPlan = null;
+const readOnly = {{ read_only|tojson }};
+const allPhotoPaths = [...cluster.photos, ...cluster.context_photos].map(photo => photo.path);
+let pendingTagPlan = null;
+let pendingGpsPlan = null;
+let gpsMap = null;
+let gpsTarget = null;
+let initialTarget = null;
+
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 }[char]));
@@ -99,74 +173,300 @@ async function api(url, body) {
   return payload;
 }
 
-function drawGps() {
-  const photos = [...cluster.photos, ...cluster.context_photos].filter(photo => photo.latitude != null && photo.longitude != null);
-  const svg = document.getElementById('gps-plot');
-  if (!photos.length) {
-    svg.innerHTML = '<text x="300" y="110" text-anchor="middle">No photo GPS to plot</text>';
-    return;
-  }
-  const lats = photos.map(photo => photo.latitude);
-  const lons = photos.map(photo => photo.longitude);
-  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-  const minLon = Math.min(...lons), maxLon = Math.max(...lons);
-  svg.innerHTML = photos.map((photo, index) => {
-    const x = 30 + 540 * ((photo.longitude - minLon) / (maxLon - minLon || 1));
-    const y = 190 - 160 * ((photo.latitude - minLat) / (maxLat - minLat || 1));
-    return `<circle cx="${x}" cy="${y}" r="7"><title>${photo.path}</title></circle><text x="${x + 10}" y="${y + 4}">${index + 1}</text>`;
-  }).join('');
+function selectedPaths() {
+  return [...document.querySelectorAll('.photo-select:checked')].map(input => input.value);
 }
 
-async function applyPending(messageId) {
-  if (!pendingPlan || !confirm(`Apply this exact preview to ${pendingPlan.items.length} photo(s)?`)) return;
+function setPhotoSelection(checked) {
+  document.querySelectorAll('.photo-select').forEach(input => { input.checked = checked; });
+}
+
+function chooseProposal(tag) {
+  document.getElementById('cluster-tag-input').value = tag;
+}
+
+function addInputTag(selectedOnly) {
+  const input = document.getElementById('cluster-tag-input');
+  const tag = input.value.trim();
+  if (!tag) return;
+  previewTagChange(selectedOnly ? selectedPaths() : allPhotoPaths, [tag], []);
+}
+
+function addPhotoTag(button) {
+  const photo = button.closest('.review-photo');
+  const input = photo.querySelector('.photo-tag-input');
+  const tag = input.value.trim();
+  if (!tag) return;
+  previewTagChange([photo.dataset.path], [tag], []);
+}
+
+async function previewTagChange(paths, add, remove) {
+  const container = document.getElementById('tag-plan');
   try {
-    const result = await api(`/api/plans/${encodeURIComponent(pendingPlan.id)}/apply`);
-    document.getElementById(messageId).textContent = `${result.changed} photo(s) updated. Reloading…`;
+    const result = await api(`/api/runs/${encodeURIComponent(runId)}/clusters/${encodeURIComponent(clusterId)}/tags/preview`, {paths, add, remove});
+    pendingTagPlan = result.plan;
+    const changed = pendingTagPlan.items.filter(item => item.changed);
+    const rows = changed.map(item => `<li><code>${escapeHtml(item.path)}</code><br>${escapeHtml(item.before.join(', ') || 'no tags')} → ${escapeHtml(item.after.join(', ') || 'no tags')}</li>`).join('');
+    container.innerHTML = changed.length
+      ? `<strong>${changed.length} image(s) would change.</strong><ul>${rows}</ul><button class="primary" onclick="applyPlan('tag')">Apply previewed tags</button>`
+      : '<span class="muted">No image would change.</span>';
+  } catch (error) {
+    container.textContent = error.message;
+  }
+}
+
+async function openLocalPath(action, path) {
+  try {
+    await api('/api/open-local', {action, target: path});
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function applyPlan(kind) {
+  const plan = kind === 'tag' ? pendingTagPlan : pendingGpsPlan;
+  const container = document.getElementById(kind === 'tag' ? 'tag-plan' : 'gps-plan');
+  if (!plan || !confirm(`Apply this exact preview to ${plan.items.length} image(s)?`)) return;
+  try {
+    const result = await api(`/api/plans/${encodeURIComponent(plan.id)}/apply`, {});
+    container.textContent = `${result.changed} image(s) updated. Reloading…`;
     setTimeout(() => location.reload(), 500);
   } catch (error) {
-    document.getElementById(messageId).textContent = error.message;
+    container.textContent = error.message;
   }
 }
 
-async function previewTags() {
-  const add = document.getElementById('add-tag').value.trim();
-  const remove = document.getElementById('remove-tag').value.trim();
-  const message = document.getElementById('tag-message');
-  try {
-    const result = await api(`/api/runs/${encodeURIComponent(runId)}/clusters/${encodeURIComponent(clusterId)}/tags/preview`, {
-      add: add ? [add] : [], remove: remove ? [remove] : []
-    });
-    pendingPlan = result.plan;
-    const changed = pendingPlan.items.filter(item => item.changed).length;
-    const rows = pendingPlan.items.filter(item => item.changed).map(item =>
-      `<li><code>${escapeHtml(item.path)}</code><br>${escapeHtml(item.before.join(', ') || 'no tags')} → ${escapeHtml(item.after.join(', ') || 'no tags')}</li>`
-    ).join('');
-    message.innerHTML = `${changed} photo(s) would change.<ul>${rows}</ul><button onclick="applyPending('tag-message')">Apply preview</button>`;
-  } catch (error) {
-    message.textContent = error.message;
+function mapPoint(photo, kind) {
+  if (photo.latitude == null || photo.longitude == null) return null;
+  return {
+    name: photo.filename || photo.path,
+    path: photo.path,
+    lat: Number(photo.latitude),
+    lon: Number(photo.longitude),
+    kind
+  };
+}
+
+function updateTargetFields(lat, lon) {
+  document.getElementById('latitude').value = lat.toFixed(7);
+  document.getElementById('longitude').value = lon.toFixed(7);
+}
+
+function initGpsMap() {
+  const mapElement = document.getElementById('gps-map');
+  if (typeof L === 'undefined') {
+    mapElement.innerHTML = '<p class="muted">The map library could not load. Enter coordinates manually below.</p>';
+    return;
   }
+  gpsMap = L.map(mapElement, {scrollWheelZoom: true});
+  const OfflineGrid = L.GridLayer.extend({
+    createTile(coords) {
+      const tile = L.DomUtil.create('canvas', 'leaflet-tile');
+      const size = this.getTileSize();
+      tile.width = size.x;
+      tile.height = size.y;
+      const context = tile.getContext('2d');
+      context.fillStyle = '#f6f8fa';
+      context.fillRect(0, 0, size.x, size.y);
+      context.strokeStyle = '#d0d7de';
+      context.strokeRect(0, 0, size.x, size.y);
+      context.fillStyle = '#8c959f';
+      context.font = '12px system-ui';
+      context.fillText(`z${coords.z} · ${coords.x}/${coords.y}`, 10, 20);
+      return tile;
+    }
+  });
+  let baseLayer = null;
+  function setBasemap(name) {
+    if (baseLayer) gpsMap.removeLayer(baseLayer);
+    baseLayer = name === 'osm'
+      ? L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 20,
+          maxNativeZoom: 19,
+          attribution: '&copy; OpenStreetMap contributors'
+        })
+      : new OfflineGrid({attribution: 'Offline coordinate grid'});
+    baseLayer.addTo(gpsMap);
+    localStorage.setItem('sapa-gps-basemap', name);
+  }
+  const basemapSelect = document.getElementById('gps-basemap');
+  const savedBasemap = localStorage.getItem('sapa-gps-basemap');
+  const defaultBasemap = savedBasemap || (cluster.street_art_cities ? 'osm' : 'offline');
+  basemapSelect.value = defaultBasemap;
+  setBasemap(defaultBasemap);
+  basemapSelect.addEventListener('change', () => setBasemap(basemapSelect.value));
+  const points = [
+    ...cluster.photos.map(photo => mapPoint(photo, 'primary')),
+    ...cluster.context_photos.map(photo => mapPoint(photo, 'context'))
+  ].filter(Boolean);
+  const sitePoints = ((cluster.street_art_cities || {}).candidates || [])
+    .filter(candidate => candidate.latitude != null && candidate.longitude != null)
+    .map(candidate => ({
+      name: candidate.artist || candidate.title || candidate.marker_id,
+      lat: Number(candidate.latitude),
+      lon: Number(candidate.longitude),
+      kind: 'site',
+      url: candidate.url
+    }));
+  const bounds = [];
+  const targetIcon = L.divIcon({
+    className: '',
+    html: '<div class="gps-target"></div>',
+    iconSize: [22, 22],
+    iconAnchor: [11, 11]
+  });
+  [...points, ...sitePoints].forEach(point => {
+    const color = point.kind === 'site' ? '#1a7f37' : point.kind === 'context' ? '#8b949e' : '#0969da';
+    const marker = L.circleMarker([point.lat, point.lon], {
+      radius: 7,
+      color: '#ffffff',
+      weight: 2,
+      fillColor: color,
+      fillOpacity: 1
+    }).addTo(gpsMap);
+    const link = point.url ? `<br><a href="${escapeHtml(point.url)}" target="_blank" rel="noopener">Open SAC marker</a>` : '';
+    marker.bindTooltip(`<strong>${escapeHtml(point.name)}</strong>${link}`);
+    bounds.push([point.lat, point.lon]);
+  });
+  const defaultPoint = cluster.latitude != null && cluster.longitude != null
+    ? [Number(cluster.latitude), Number(cluster.longitude)]
+    : bounds[0] || null;
+  if (defaultPoint) {
+    initialTarget = defaultPoint;
+    gpsTarget = L.marker(defaultPoint, {
+      draggable: !readOnly,
+      icon: targetIcon,
+      zIndexOffset: 1000
+    }).addTo(gpsMap);
+    gpsTarget.bindTooltip(readOnly ? 'Current cluster position' : 'Drag target to reposition selected images');
+    gpsTarget.on('drag', event => {
+      const point = event.target.getLatLng();
+      updateTargetFields(point.lat, point.lng);
+    });
+    bounds.push(defaultPoint);
+  }
+  if (bounds.length === 1) gpsMap.setView(bounds[0], 18);
+  else if (bounds.length > 1) gpsMap.fitBounds(bounds, {padding: [28, 28], maxZoom: 19});
+  else gpsMap.setView([20, 0], 2);
+  if (window.ResizeObserver) {
+    new ResizeObserver(() => gpsMap.invalidateSize()).observe(mapElement);
+  }
+}
+
+function moveTargetFromFields() {
+  const lat = Number(document.getElementById('latitude').value);
+  const lon = Number(document.getElementById('longitude').value);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || !gpsMap) return;
+  if (!gpsTarget) {
+    initialTarget = [lat, lon];
+    const targetIcon = L.divIcon({
+      className: '',
+      html: '<div class="gps-target"></div>',
+      iconSize: [22, 22],
+      iconAnchor: [11, 11]
+    });
+    gpsTarget = L.marker([lat, lon], {
+      draggable: !readOnly,
+      icon: targetIcon,
+      zIndexOffset: 1000
+    }).addTo(gpsMap);
+    gpsTarget.on('drag', event => {
+      const point = event.target.getLatLng();
+      updateTargetFields(point.lat, point.lng);
+    });
+  } else {
+    gpsTarget.setLatLng([lat, lon]);
+  }
+  gpsMap.panTo([lat, lon]);
+}
+
+function resetGpsTarget() {
+  if (!initialTarget) return;
+  updateTargetFields(initialTarget[0], initialTarget[1]);
+  if (gpsTarget) gpsTarget.setLatLng(initialTarget);
+  if (gpsMap) gpsMap.panTo(initialTarget);
 }
 
 async function previewGpsMove() {
-  const message = document.getElementById('gps-message');
-  const paths = [...document.querySelectorAll('.gps-photo:checked')].map(item => item.value);
+  const container = document.getElementById('gps-plan');
+  const paths = selectedPaths();
+  const latitude = Number(document.getElementById('latitude').value);
+  const longitude = Number(document.getElementById('longitude').value);
+  if (!paths.length) {
+    container.textContent = 'Select at least one image on the left.';
+    return;
+  }
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    container.textContent = 'Enter a valid latitude and longitude.';
+    return;
+  }
   try {
-    const result = await api(`/api/runs/${encodeURIComponent(runId)}/clusters/${encodeURIComponent(clusterId)}/gps/preview`, {
-      latitude: Number(document.getElementById('latitude').value),
-      longitude: Number(document.getElementById('longitude').value),
-      paths
-    });
-    pendingPlan = result.plan;
-    const rows = pendingPlan.items.map(item =>
-      `<li><code>${escapeHtml(item.path)}</code>: ${escapeHtml(item.before.latitude ?? 'no GPS')}, ${escapeHtml(item.before.longitude ?? 'no GPS')} → ${escapeHtml(item.after.latitude)}, ${escapeHtml(item.after.longitude)}</li>`
-    ).join('');
-    message.innerHTML = `${pendingPlan.items.length} photo(s) would move.<ul>${rows}</ul><button onclick="applyPending('gps-message')">Apply preview</button>`;
+    const result = await api(`/api/runs/${encodeURIComponent(runId)}/clusters/${encodeURIComponent(clusterId)}/gps/preview`, {latitude, longitude, paths});
+    pendingGpsPlan = result.plan;
+    const rows = pendingGpsPlan.items.map(item => `<li><code>${escapeHtml(item.path)}</code>: ${escapeHtml(item.before.latitude ?? 'no GPS')}, ${escapeHtml(item.before.longitude ?? 'no GPS')} → ${escapeHtml(item.after.latitude)}, ${escapeHtml(item.after.longitude)}</li>`).join('');
+    container.innerHTML = `<strong>${pendingGpsPlan.items.length} image(s) would move.</strong><ul>${rows}</ul><button class="primary" onclick="applyPlan('gps')">Apply previewed GPS</button>`;
   } catch (error) {
-    message.textContent = error.message;
+    container.textContent = error.message;
   }
 }
 
-drawGps();
+function setColumnRatio(ratio) {
+  const columns = document.getElementById('detail-view');
+  ratio = Math.max(30, Math.min(70, ratio));
+  columns.style.gridTemplateColumns = `${ratio}fr 9px ${100 - ratio}fr`;
+  localStorage.setItem('sapa-column-ratio', String(ratio));
+  if (gpsMap) setTimeout(() => gpsMap.invalidateSize(), 0);
+}
+
+function initResizers() {
+  const columns = document.getElementById('detail-view');
+  const columnResizer = document.getElementById('column-resizer');
+  setColumnRatio(Number(localStorage.getItem('sapa-column-ratio')) || 50);
+  let columnDrag = false;
+  columnResizer.addEventListener('pointerdown', event => {
+    columnDrag = true;
+    columnResizer.setPointerCapture(event.pointerId);
+    columnResizer.classList.add('resizing');
+  });
+  columnResizer.addEventListener('pointermove', event => {
+    if (!columnDrag) return;
+    const box = columns.getBoundingClientRect();
+    setColumnRatio((event.clientX - box.left) / box.width * 100);
+  });
+  columnResizer.addEventListener('pointerup', event => {
+    columnDrag = false;
+    columnResizer.classList.remove('resizing');
+    columnResizer.releasePointerCapture(event.pointerId);
+  });
+
+  const savedHeight = Number(localStorage.getItem('sapa-photo-height')) || 360;
+  document.documentElement.style.setProperty('--review-photo-height', `${savedHeight}px`);
+  document.querySelectorAll('.photo-image-resizer').forEach(resizer => {
+    let imageDrag = false;
+    resizer.addEventListener('pointerdown', event => {
+      imageDrag = true;
+      resizer.setPointerCapture(event.pointerId);
+      resizer.classList.add('resizing');
+    });
+    resizer.addEventListener('pointermove', event => {
+      if (!imageDrag) return;
+      const mediaTop = resizer.closest('.review-photo').querySelector('.photo-media').getBoundingClientRect().top;
+      const height = Math.max(80, Math.min(window.innerHeight * 0.9, event.clientY - mediaTop));
+      document.documentElement.style.setProperty('--review-photo-height', `${height}px`);
+      localStorage.setItem('sapa-photo-height', String(height));
+    });
+    resizer.addEventListener('pointerup', event => {
+      imageDrag = false;
+      resizer.classList.remove('resizing');
+      resizer.releasePointerCapture(event.pointerId);
+    });
+  });
+}
+
+document.getElementById('latitude').addEventListener('change', moveTargetFromFields);
+document.getElementById('longitude').addEventListener('change', moveTargetFromFields);
+initResizers();
+initGpsMap();
 </script>
 </body>
 </html>

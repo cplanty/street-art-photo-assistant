@@ -14,6 +14,10 @@
 Changing any source or filter invalidates the preview, GPS plan, and report
 action. Disabled actions are grey.
 
+The report opens on the cluster dashboard. Selecting a cluster opens a
+resizable two-pane workspace: local photos and tag controls are on the left;
+GPS positioning and optional Street Art Cities evidence are on the right.
+
 ## Compare with Street Art Cities
 
 Enable **Compare with Street Art Cities**, choose or enter a lowercase city
@@ -36,10 +40,22 @@ completed write.
 
 ## Edit a cluster
 
-The detail page reloads current tags and coordinates from disk. Primary photos
-are selected by default for manual positioning; context photos are not. Tag and
-GPS actions first show exact files and before/after values, then require a
-separate confirmation.
+The detail page reloads current tags and coordinates from disk. Drag the
+vertical divider to resize the two columns and a horizontal photo divider to
+resize previews. Every image shows its filename, current tags, proposals,
+artist-assisted free-form input, Explorer/default-app actions, and a full-size
+link.
+
+Primary photos are selected by default; context photos are not. Tags can be
+previewed for one image, the selected images, or every cluster image.
+`_unknown` and `_wall` remain available as workflow proposals. The GPS map
+shows primary, context, and Street Art Cities positions; drag its target and
+preview the move for the selected images. Tag and GPS actions always show exact
+files and before/after values before a separate apply confirmation.
+
+The bundled Leaflet map starts with an offline coordinate grid when Street Art
+Cities matching is disabled. **OpenStreetMap (network)** can be selected as
+display context; its tiles are never used as proposal or matching evidence.
 
 ## Runs
 
