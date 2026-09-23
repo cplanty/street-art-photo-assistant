@@ -15,22 +15,42 @@
       <p>{{ clusters|length }} cluster(s) · {{ manifest.selected_photos }} selected photo(s)</p>
     </div>
   </header>
-  <div class="cluster-grid">
-  {% for cluster in clusters %}
-    <article class="card cluster-card">
-      <a href="{{ url_for('cluster_review', run_id=manifest.id, cluster_id=cluster.id) }}">
+  {% macro sort_head(key, label) -%}
+    {% set new_direction = 'desc' if sort == key and direction == 'asc' else 'asc' %}
+    <a href="{{ url_for('run_review', run_id=manifest.id, sort=key, dir=new_direction) }}">{{ label }}{% if sort == key %} {{ '▲' if direction == 'asc' else '▼' }}{% endif %}</a>
+  {%- endmacro %}
+  <div class="table-scroll">
+    <table class="cluster-table">
+      <thead>
+        <tr>
+          <th>{{ sort_head('index', 'Index') }}</th>
+          <th>Preview</th>
+          <th>{{ sort_head('tag', 'Tag') }}</th>
+          <th>{{ sort_head('time', 'Capture time') }}</th>
+          <th>{{ sort_head('photos', 'Photos') }}</th>
+          <th>Position</th>
+          <th>{{ sort_head('status', 'SAC status') }}</th>
+          <th>Recommendation</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for cluster in clusters %}
         {% set first = (cluster.photos + cluster.context_photos)|first %}
-        {% if first %}<img src="{{ url_for('photo', path=first.path) }}" alt="Cluster thumbnail">{% endif %}
-        <h2>{{ cluster.tag }}</h2>
-      </a>
-      <p>{{ cluster.photos|length }} primary · {{ cluster.context_photos|length }} context</p>
-      <p class="muted">{% if cluster.latitude is not none %}{{ '%.6f'|format(cluster.latitude) }}, {{ '%.6f'|format(cluster.longitude) }}{% else %}No GPS{% endif %}</p>
-      {% if cluster.street_art_cities %}
-        <p><strong>{{ cluster.street_art_cities.status }}</strong></p>
-        <p class="muted">{{ cluster.street_art_cities.recommendation }}</p>
-      {% endif %}
-    </article>
-  {% endfor %}
+        <tr>
+          <td><a href="{{ url_for('cluster_review', run_id=manifest.id, cluster_id=cluster.id, sort=sort, dir=direction) }}">{{ cluster._index }}</a></td>
+          <td>{% if first %}<a href="{{ url_for('cluster_review', run_id=manifest.id, cluster_id=cluster.id, sort=sort, dir=direction) }}"><img class="table-thumb" src="{{ url_for('photo', path=first.path) }}" alt=""></a>{% endif %}</td>
+          <td><a href="{{ url_for('cluster_review', run_id=manifest.id, cluster_id=cluster.id, sort=sort, dir=direction) }}"><strong>{{ cluster.tag }}</strong></a></td>
+          <td>{{ cluster.first_capture or '—' }}{% if cluster.last_capture and cluster.last_capture != cluster.first_capture %}<br><span class="muted">to {{ cluster.last_capture }}</span>{% endif %}</td>
+          <td>{{ cluster.photos|length }} primary<br><span class="muted">{{ cluster.context_photos|length }} context</span></td>
+          <td>{% if cluster.latitude is not none %}{{ '%.6f'|format(cluster.latitude) }}, {{ '%.6f'|format(cluster.longitude) }}{% else %}No GPS{% endif %}</td>
+          <td>{{ cluster.street_art_cities.status if cluster.street_art_cities else 'offline' }}</td>
+          <td>{{ cluster.street_art_cities.recommendation if cluster.street_art_cities else 'Cluster review' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8" class="muted">No clusters.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
   </div>
 </main>
 </body>

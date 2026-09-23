@@ -30,7 +30,12 @@ from flask import (
 
 from .config import resolve_local_path, save_config, validate_config
 from .diagnostics import create_diagnostic_bundle
-from .gps import apply_gps_plan, build_manual_gps_plan, build_missing_gps_plan
+from .gps import (
+    apply_gps_plan,
+    build_individual_gps_plan,
+    build_manual_gps_plan,
+    build_missing_gps_plan,
+)
 from .metadata import apply_tag_edit_plan, build_tag_edit_plan
 from .models import PhotoRecord
 from .photos import read_photo
@@ -210,6 +215,36 @@ def create_app(
             if cluster["id"] == cluster_id:
                 return cluster
         raise ValueError("Unknown cluster")
+
+    def ordered_clusters(
+        run_id: str,
+        sort: str,
+        direction: str,
+    ) -> list[dict[str, Any]]:
+        clusters = manager.report(run_id)["clusters"]
+        indexed = [(index + 1, cluster) for index, cluster in enumerate(clusters)]
+        keys = {
+            "index": lambda item: item[0],
+            "tag": lambda item: str(item[1].get("tag") or "").casefold(),
+            "time": lambda item: str(
+                item[1].get("first_capture") or "9999"
+            ),
+            "photos": lambda item: (
+                len(item[1].get("photos") or [])
+                + len(item[1].get("context_photos") or [])
+            ),
+            "status": lambda item: str(
+                (item[1].get("street_art_cities") or {}).get("status") or ""
+            ),
+        }
+        key = keys.get(sort, keys["index"])
+        indexed.sort(key=key, reverse=direction == "desc")
+        ordered = []
+        for index, cluster in indexed:
+            payload = deepcopy(cluster)
+            payload["_index"] = index
+            ordered.append(payload)
+        return ordered
 
     def cluster_paths(cluster: dict[str, Any]) -> list[Path]:
         return [
@@ -482,6 +517,10 @@ def create_app(
             run_config, visual=visual
         )})
 
+    @app.get("/api/runs")
+    def list_runs():
+        return jsonify({"ok": True, "runs": manager.list_runs()})
+
     @app.get("/api/runs/<run_id>")
     def run_status(run_id: str):
         return jsonify({
@@ -501,16 +540,29 @@ def create_app(
     @app.get("/runs/<run_id>")
     def run_review(run_id: str):
         manifest = manager.status(run_id)
-        report = manager.report(run_id)
+        sort = str(request.args.get("sort") or "index")
+        if sort not in {"index", "tag", "time", "photos", "status"}:
+            sort = "index"
+        direction = str(request.args.get("dir") or "asc")
+        if direction not in {"asc", "desc"}:
+            direction = "asc"
         return render_template(
             "run.html",
             manifest=manifest,
-            clusters=report["clusters"],
+            clusters=ordered_clusters(run_id, sort, direction),
+            sort=sort,
+            direction=direction,
         )
 
     @app.get("/runs/<run_id>/clusters/<cluster_id>")
     def cluster_review(run_id: str, cluster_id: str):
         cluster = refreshed_cluster(run_id, cluster_id)
+        sort = str(request.args.get("sort") or "index")
+        if sort not in {"index", "tag", "time", "photos", "status"}:
+            sort = "index"
+        direction = str(request.args.get("dir") or "asc")
+        if direction not in {"asc", "desc"}:
+            direction = "asc"
         artists_path = resolve_local_path(
             config_root, str(current_config()["paths"]["artists"])
         )
@@ -529,18 +581,34 @@ def create_app(
             ):
                 if tag not in proposals:
                     proposals.append(tag)
+        autocomplete_tags = []
+        for tag in [*proposals, *known_tags]:
+            if tag not in autocomplete_tags:
+                autocomplete_tags.append(tag)
+        photo_groups = [*cluster["photos"], *cluster["context_photos"]]
+        common_tags = []
+        if photo_groups:
+            common = set(photo_groups[0]["tags"])
+            for photo in photo_groups[1:]:
+                common.intersection_update(photo["tags"])
+            common_tags = [
+                tag for tag in photo_groups[0]["tags"] if tag in common
+            ]
         ids = [
-            item["id"] for item in manager.report(run_id)["clusters"]
+            item["id"] for item in ordered_clusters(run_id, sort, direction)
         ]
         position = ids.index(cluster_id)
         return render_template(
             "cluster.html",
             run_id=run_id,
             cluster=cluster,
-            known_tags=known_tags,
+            known_tags=autocomplete_tags,
+            common_tags=common_tags,
             tag_proposals=proposals,
             previous_id=ids[(position - 1) % len(ids)],
             next_id=ids[(position + 1) % len(ids)],
+            sort=sort,
+            direction=direction,
             read_only=bool(current_config().get("read_only")),
         )
 
@@ -573,6 +641,36 @@ def create_app(
     def manual_gps_preview(run_id: str, cluster_id: str):
         cluster = report_cluster(run_id, cluster_id)
         payload = request.get_json(force=True)
+        allowed_items = {
+            str(Path(item["path"]).resolve()): item
+            for item in [*cluster["photos"], *cluster["context_photos"]]
+        }
+        moves = payload.get("moves")
+        if moves is not None:
+            if not isinstance(moves, list):
+                raise ValueError("GPS moves must be a list")
+            planned = []
+            seen = set()
+            for move in moves:
+                if not isinstance(move, dict):
+                    raise ValueError("Each GPS move must be an object")
+                path = str(Path(str(move.get("path") or "")).resolve())
+                if path not in allowed_items:
+                    raise ValueError("Selected photo is outside this cluster")
+                if path in seen:
+                    raise ValueError("A photo can only have one GPS move")
+                seen.add(path)
+                item = allowed_items[path]
+                planned.append((
+                    read_photo(Path(path), str(item.get("source") or "")),
+                    float(move["latitude"]),
+                    float(move["longitude"]),
+                ))
+            plan = build_individual_gps_plan(planned)
+            plan["run_id"] = run_id
+            plan["cluster_id"] = cluster_id
+            save_plan(plan)
+            return jsonify({"ok": True, "plan": plan})
         requested_paths = payload.get("paths")
         selected_paths = (
             {

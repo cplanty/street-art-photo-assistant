@@ -16,11 +16,14 @@ action. Disabled actions are grey.
 
 Generate displays the persisted stage, percentage, item count, warnings, and a
 bounded live log tail. Progress survives a page refresh because each run writes
-`progress.json`.
+`progress.json`. On completion, the new report is inserted into **Recent runs**
+without requiring a page reload.
 
 The report opens on the cluster dashboard. Selecting a cluster opens a
 resizable two-pane workspace: local photos and tag controls are on the left;
 GPS positioning and optional Street Art Cities evidence are on the right.
+Dashboard headings sort by index, tag, capture time, photo count, or SAC
+status. Previous/Next and **Ctrl+Left/Right** follow that dashboard order.
 
 ## Compare with Street Art Cities
 
@@ -56,6 +59,15 @@ previewed for one image, the selected images, or every cluster image.
 shows primary, context, and Street Art Cities positions; drag its target and
 preview the move for the selected images. Tag and GPS actions always show exact
 files and before/after values before a separate apply confirmation.
+
+Tags found on every cluster image appear once in **On all photos**, where they
+can be previewed for removal from the complete cluster. Autocomplete lists
+`_unknown` and `_wall` before artist entries for underscore queries. Tab and
+Shift+Tab move directly between cluster/per-image tag editors.
+
+To fix one image independently, click its blue/grey map point to select it,
+drag it, and choose **Preview individual moves**. Multiple independently moved
+points become one exact plan while retaining distinct destination coordinates.
 
 The bundled Leaflet map starts with an offline coordinate grid when Street Art
 Cities matching is disabled. **OpenStreetMap (network)** can be selected as

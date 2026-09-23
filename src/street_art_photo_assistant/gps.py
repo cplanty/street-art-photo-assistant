@@ -176,6 +176,35 @@ def build_manual_gps_plan(
     }
 
 
+def build_individual_gps_plan(
+    moves: Iterable[tuple[PhotoRecord, float, float]],
+) -> dict[str, Any]:
+    """Build one exact plan containing independent photo positions."""
+
+    items = []
+    for photo, latitude, longitude in moves:
+        if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+            raise ValueError("GPS position is out of range")
+        items.append({
+            "path": str(photo.path.resolve()),
+            "fingerprint": _fingerprint_dict(photo.path),
+            "before": {
+                "latitude": photo.latitude,
+                "longitude": photo.longitude,
+            },
+            "after": {"latitude": latitude, "longitude": longitude},
+        })
+    if not items:
+        raise ValueError("Select at least one GPS move")
+    return {
+        "version": 1,
+        "kind": "manual-gps",
+        "id": uuid.uuid4().hex,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "items": items,
+    }
+
+
 def apply_gps_plan(
     plan: dict[str, Any],
     *,

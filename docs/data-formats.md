@@ -46,7 +46,8 @@ historical entries.
 
 A repair plan records its ID/time and exact target/reference pairs. Every pair
 contains both file fingerprints, proposed coordinates, and capture-time
-difference.
+difference. Manual plans may contain one shared destination or an independent
+destination for every moved image.
 
 ## Run manifest and change log
 

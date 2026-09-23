@@ -62,6 +62,13 @@ button:disabled, .primary:disabled {
 fieldset { border: 1px solid #d0d7de; border-radius: 6px; min-width: 250px; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 8px; border-bottom: 1px solid #d8dee4; text-align: left; }
+.table-scroll { overflow-x: auto; }
+.cluster-table th { position: sticky; top: 0; z-index: 1; background: #f6f8fa; }
+.cluster-table th a { color: inherit; text-decoration: none; white-space: nowrap; }
+.cluster-table tbody tr:hover { background: #f6f8fa; }
+.cluster-table td { vertical-align: middle; }
+.cluster-table td a { color: inherit; text-decoration: none; }
+.table-thumb { display: block; width: 96px; height: 72px; object-fit: contain; background: #eaeef2; }
 .log { max-height: 320px; overflow: auto; padding: 12px; color: #e6edf3; background: #0d1117; }
 .run-progress {
   max-width: 900px;
@@ -135,6 +142,13 @@ code { overflow-wrap: anywhere; }
   align-items: end;
   gap: 8px;
   flex-wrap: wrap;
+}
+.common-tags {
+  margin-bottom: 10px;
+  padding: 7px 9px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #f6f8fa;
 }
 .cluster-tag-tools label { flex: 1; min-width: 220px; }
 .cluster-tag-tools input { width: 100%; }
@@ -243,6 +257,22 @@ code { overflow-wrap: anywhere; }
   background: transparent;
   box-shadow: 0 0 0 1px #fff, inset 0 0 0 1px #fff;
 }
+.gps-photo-dot {
+  width: 15px;
+  height: 15px;
+  margin: 2px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+.gps-photo-dot.selected {
+  width: 19px;
+  height: 19px;
+  margin: 0;
+  border: 3px solid #cf222e;
+  box-shadow: 0 0 0 2px #fff, 0 0 6px rgba(207, 34, 46, 0.8);
+}
+.gps-photo-dot.moved { border-color: #bf8700; border-style: dashed; }
 .sac-candidates {
   display: flex;
   flex-direction: column;

@@ -6,6 +6,7 @@ from shutil import copy2
 
 from street_art_photo_assistant.gps import (
     apply_gps_plan,
+    build_individual_gps_plan,
     build_manual_gps_plan,
     build_missing_gps_plan,
 )
@@ -103,7 +104,30 @@ class GPSTests(unittest.TestCase):
         self.assertAlmostEqual(47.5, moved.latitude, places=5)
         self.assertAlmostEqual(1.5, moved.longitude, places=5)
 
+    def test_individual_plan_keeps_distinct_positions(self):
+        first = read_photo(self.reference_path, "Camera")
+        second_path = self.root / "located-2.jpg"
+        copy2(FIXTURES / "located.jpg", second_path)
+        second = read_photo(second_path, "Camera")
+        plan = build_individual_gps_plan([
+            (first, 47.5, 1.5),
+            (second, 47.6, 1.6),
+        ])
+
+        changed = apply_gps_plan(
+            plan,
+            allowed_roots=[self.root],
+            change_log_path=self.root / "individual.json",
+        )
+
+        self.assertEqual(2, changed)
+        self.assertAlmostEqual(
+            47.5, read_photo(self.reference_path, "Camera").latitude, places=5
+        )
+        self.assertAlmostEqual(
+            47.6, read_photo(second_path, "Camera").latitude, places=5
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
-

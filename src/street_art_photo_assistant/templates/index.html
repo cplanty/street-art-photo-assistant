@@ -171,7 +171,7 @@
     <h2>Recent runs</h2>
     <table>
       <thead><tr><th>Run</th><th>Label</th><th>Status</th><th>Photos</th><th>Clusters</th><th>Actions</th></tr></thead>
-      <tbody>
+      <tbody id="recent-runs-body">
       {% for run in runs if not run.id.startswith('_') %}
         <tr>
           <td><code>{{ run.id }}</code></td>
@@ -481,9 +481,44 @@ async function pollRun() {
       : `${escapeHtml(run.status)} — ${escapeHtml(run.stage)}`;
     byId('run-log').hidden = !run.log;
     byId('run-log').textContent = run.log || '';
-    if (['queued','running'].includes(run.status)) setTimeout(pollRun, 1000);
+    if (['queued','running'].includes(run.status)) {
+      setTimeout(pollRun, 1000);
+    } else {
+      await refreshRecentRuns();
+      currentRun = null;
+    }
   } catch (error) {
     byId('run-message').textContent = error.message;
+  }
+}
+
+function recentRunRow(run) {
+  const active = ['queued', 'running'].includes(run.status);
+  const open = run.status === 'complete'
+    ? `<a class="button" href="/runs/${encodeURIComponent(run.id)}" target="_blank" rel="noopener">Open</a>`
+    : '';
+  const action = active
+    ? `<button onclick="cancelRun('${run.id}')">Cancel</button>`
+    : `<button class="danger" onclick="deleteRun('${run.id}')">Delete</button>`;
+  return `<tr>
+    <td><code>${escapeHtml(run.id)}</code></td>
+    <td>${escapeHtml(run.label || '—')}</td>
+    <td>${escapeHtml(run.status)}</td>
+    <td>${run.selected_photos == null ? '—' : run.selected_photos}</td>
+    <td>${run.clusters == null ? '—' : run.clusters}</td>
+    <td>${open} ${action}</td>
+  </tr>`;
+}
+
+async function refreshRecentRuns() {
+  try {
+    const result = await api('/api/runs');
+    const runs = result.runs.filter(run => !run.id.startsWith('_'));
+    byId('recent-runs-body').innerHTML = runs.length
+      ? runs.map(recentRunRow).join('')
+      : '<tr><td colspan="6" class="muted">No runs yet.</td></tr>';
+  } catch (error) {
+    byId('run-message').textContent = `Report finished, but Recent runs could not refresh: ${error.message}`;
   }
 }
 

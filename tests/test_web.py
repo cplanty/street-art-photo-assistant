@@ -80,6 +80,8 @@ class WebTests(unittest.TestCase):
         self.assertIn("Apply previewed GPS fixes", page)
         self.assertIn("Refresh &amp; run", page)
         self.assertIn('id="run-progress"', page)
+        self.assertIn('id="recent-runs-body"', page)
+        self.assertIn("refreshRecentRuns", page)
         self.assertIn("Generate diagnostic package", page)
         self.assertIn(
             "Preview complete. You can now generate report",
@@ -173,9 +175,17 @@ class WebTests(unittest.TestCase):
         self.assertEqual("complete", status["progress"]["stage"])
         dashboard = self.client.get(f"/runs/{started['id']}")
         self.assertEqual(200, dashboard.status_code)
+        dashboard_page = dashboard.get_data(as_text=True)
+        self.assertIn("Cluster dashboard", dashboard_page)
+        self.assertIn('class="cluster-table"', dashboard_page)
+        self.assertIn("Capture time", dashboard_page)
+        self.assertIn("SAC status", dashboard_page)
+        sorted_dashboard = self.client.get(
+            f"/runs/{started['id']}?sort=time&dir=desc"
+        )
         self.assertIn(
-            "Cluster dashboard",
-            dashboard.get_data(as_text=True),
+            "sort=time&amp;dir=asc",
+            sorted_dashboard.get_data(as_text=True),
         )
         report = self.manager.report(started["id"])
         cluster_id = report["clusters"][0]["id"]
@@ -192,8 +202,19 @@ class WebTests(unittest.TestCase):
         self.assertIn("Add to all", detail_page)
         self.assertIn("Add to selected", detail_page)
         self.assertIn("Show in Explorer", detail_page)
+        self.assertIn("On all photos:", detail_page)
         self.assertIn("_unknown", detail_page)
         self.assertIn("_wall", detail_page)
+        self.assertLess(
+            detail_page.index('<option value="_unknown">'),
+            detail_page.index('<option value="_wall">'),
+        )
+        self.assertIn("event.ctrlKey", detail_page)
+        self.assertIn("ArrowLeft", detail_page)
+        self.assertIn("ArrowRight", detail_page)
+        self.assertIn("previewIndividualGpsMoves", detail_page)
+        listed = self.client.get("/api/runs").get_json()["runs"]
+        self.assertEqual(started["id"], listed[0]["id"])
         deleted = self.client.delete(f"/api/runs/{started['id']}")
         self.assertEqual(200, deleted.status_code)
         self.assertEqual([], self.manager.list_runs())
@@ -265,6 +286,42 @@ class WebTests(unittest.TestCase):
         })
         self.assertEqual(400, rejected.status_code)
         self.assertIn("outside this cluster", rejected.get_json()["error"])
+
+    def test_cluster_individual_gps_preview_keeps_each_position(self):
+        preview = self.preview()
+        started = self.client.post("/api/runs", json={
+            "config": self.config,
+            "preview_token": preview["token"],
+        }).get_json()["run"]
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            status = self.manager.status(started["id"])
+            if status["status"] not in {"queued", "running"}:
+                break
+            time.sleep(0.05)
+        cluster = self.manager.report(started["id"])["clusters"][0]
+        photos = [*cluster["photos"], *cluster["context_photos"]]
+        moves = [
+            {
+                "path": photo["path"],
+                "latitude": 47.0 + index / 10,
+                "longitude": 1.0 + index / 10,
+            }
+            for index, photo in enumerate(photos)
+        ]
+
+        response = self.client.post(
+            f"/api/runs/{started['id']}/clusters/{cluster['id']}/gps/preview",
+            json={"moves": moves},
+        )
+
+        self.assertEqual(200, response.status_code)
+        items = response.get_json()["plan"]["items"]
+        self.assertEqual(len(moves), len(items))
+        self.assertEqual(
+            [move["latitude"] for move in moves],
+            [item["after"]["latitude"] for item in items],
+        )
 
     def test_local_explorer_action_is_confined_to_photo_sources(self):
         with patch(

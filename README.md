@@ -22,8 +22,12 @@ affiliated with or endorsed by Street Art Cities.
   a report is generated.
 - Start each report on a cluster dashboard, then review it in a resizable
   two-pane photo/tag/GPS workspace.
+- Sort the dashboard by index, tag, capture time, photo count, or SAC status;
+  cluster navigation follows that order.
 - Apply artist-assisted tags to one, selected, or all cluster images through
   exact preview plans.
+- Reposition selected images together or drag individual photo markers to
+  independent coordinates before previewing the write.
 - Optionally refresh a complete Street Art Cities city marker set and compare
   nearby candidates by artist, GPS, and local OpenCV evidence.
 - Inspect exact tag/GPS plans before applying them from cluster detail pages.

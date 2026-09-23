@@ -11,9 +11,9 @@
 <body>
 <main class="review-main">
   <nav class="review-nav">
-    <a class="button" href="{{ url_for('cluster_review', run_id=run_id, cluster_id=previous_id) }}">← Previous</a>
-    <a class="button" href="{{ url_for('run_review', run_id=run_id) }}">Cluster dashboard</a>
-    <a class="button" href="{{ url_for('cluster_review', run_id=run_id, cluster_id=next_id) }}">Next →</a>
+    <a id="previous-cluster" class="button" href="{{ url_for('cluster_review', run_id=run_id, cluster_id=previous_id, sort=sort, dir=direction) }}">← Previous</a>
+    <a class="button" href="{{ url_for('run_review', run_id=run_id, sort=sort, dir=direction) }}">Cluster dashboard</a>
+    <a id="next-cluster" class="button" href="{{ url_for('cluster_review', run_id=run_id, cluster_id=next_id, sort=sort, dir=direction) }}">Next →</a>
   </nav>
   <header>
     <h1>{{ cluster.tag }}</h1>
@@ -28,9 +28,17 @@
     <div class="detail-column">
       <section class="card">
         <h2>Your photos</h2>
+        <div class="common-tags">
+          <strong>On all photos:</strong>
+          {% for tag in common_tags %}
+            <span class="tag">{{ tag }}<button type="button" title="Remove from every image" onclick='previewTagChange(allPhotoPaths, [], [{{ tag|tojson }}])' {% if read_only %}disabled{% endif %}>×</button></span>
+          {% else %}
+            <span class="muted">no common tag</span>
+          {% endfor %}
+        </div>
         <div class="cluster-tag-tools">
           <label>Tag to add
-            <input id="cluster-tag-input" list="known-tags" autocomplete="off" placeholder="artist or free-form tag">
+            <input id="cluster-tag-input" class="tag-editor" list="known-tags" autocomplete="off" placeholder="artist or free-form tag">
           </label>
           <button type="button" onclick="addInputTag(false)" {% if read_only %}disabled{% endif %}>Add to all</button>
           <button type="button" onclick="addInputTag(true)" {% if read_only %}disabled{% endif %}>Add to selected</button>
@@ -75,7 +83,7 @@
                 {% endfor %}
               </div>
               <div class="input-action">
-                <input class="photo-tag-input" list="known-tags" autocomplete="off" placeholder="add tag…">
+                <input class="photo-tag-input tag-editor" list="known-tags" autocomplete="off" placeholder="add tag…">
                 <button type="button" onclick="addPhotoTag(this)" {% if read_only %}disabled{% endif %}>Add</button>
               </div>
               <div class="photo-file-actions">
@@ -97,7 +105,7 @@
     <div class="detail-column">
       <section class="card gps-map-card">
         <h2>GPS position utility</h2>
-        <p class="muted">Blue points are primary photos, grey points are context images, and green points are Street Art Cities markers. Drag the red target, select images on the left, then preview the exact GPS change.</p>
+        <p class="muted">Blue points are primary photos, grey points are context images, and green points are Street Art Cities markers. Drag the red target to move selected images together. Click a photo point to select it, then drag it for an individual correction.</p>
         <div id="gps-map"></div>
         <div class="form-row">
           <label>Map background
@@ -110,6 +118,11 @@
           <label>Longitude <input id="longitude" type="number" step="any" value="{{ cluster.longitude if cluster.longitude is not none else '' }}"></label>
           <button type="button" onclick="previewGpsMove()" {% if read_only %}disabled{% endif %}>Preview selected images</button>
           <button type="button" onclick="resetGpsTarget()">Reset target</button>
+        </div>
+        <div id="individual-gps-controls" class="button-row" hidden>
+          <strong id="individual-gps-count"></strong>
+          <button type="button" onclick="previewIndividualGpsMoves()" {% if read_only %}disabled{% endif %}>Preview individual moves</button>
+          <button type="button" onclick="cancelIndividualGpsMoves()">Cancel individual moves</button>
         </div>
         <div id="gps-plan" class="plan-preview"></div>
       </section>
@@ -140,9 +153,9 @@
   </div>
 
   <nav class="review-nav">
-    <a class="button" href="{{ url_for('cluster_review', run_id=run_id, cluster_id=previous_id) }}">← Previous</a>
-    <a class="button" href="{{ url_for('run_review', run_id=run_id) }}">Cluster dashboard</a>
-    <a class="button" href="{{ url_for('cluster_review', run_id=run_id, cluster_id=next_id) }}">Next →</a>
+    <a class="button" href="{{ url_for('cluster_review', run_id=run_id, cluster_id=previous_id, sort=sort, dir=direction) }}">← Previous</a>
+    <a class="button" href="{{ url_for('run_review', run_id=run_id, sort=sort, dir=direction) }}">Cluster dashboard</a>
+    <a class="button" href="{{ url_for('cluster_review', run_id=run_id, cluster_id=next_id, sort=sort, dir=direction) }}">Next →</a>
   </nav>
 </main>
 
@@ -157,6 +170,8 @@ let pendingGpsPlan = null;
 let gpsMap = null;
 let gpsTarget = null;
 let initialTarget = null;
+let selectedPhotoMarker = null;
+const photoMarkers = [];
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -315,19 +330,87 @@ function initGpsMap() {
     iconSize: [22, 22],
     iconAnchor: [11, 11]
   });
-  [...points, ...sitePoints].forEach(point => {
-    const color = point.kind === 'site' ? '#1a7f37' : point.kind === 'context' ? '#8b949e' : '#0969da';
+  function photoIcon(entry) {
+    const color = entry.point.kind === 'context' ? '#8b949e' : '#0969da';
+    const classes = [
+      'gps-photo-dot',
+      entry === selectedPhotoMarker ? 'selected' : '',
+      entry.moved ? 'moved' : ''
+    ].filter(Boolean).join(' ');
+    return L.divIcon({
+      className: '',
+      html: `<div class="${classes}" style="background:${color}"></div>`,
+      iconSize: [19, 19],
+      iconAnchor: [9.5, 9.5]
+    });
+  }
+  function paintPhotoMarker(entry) {
+    entry.marker.setIcon(photoIcon(entry));
+    if (entry === selectedPhotoMarker && entry.marker.dragging) {
+      entry.marker.dragging.enable();
+    }
+  }
+  function selectPhotoMarker(entry) {
+    const previous = selectedPhotoMarker;
+    selectedPhotoMarker = entry === selectedPhotoMarker ? null : entry;
+    if (previous && previous.marker.dragging) {
+      previous.marker.dragging.disable();
+      paintPhotoMarker(previous);
+    }
+    if (selectedPhotoMarker) {
+      if (selectedPhotoMarker.marker.dragging) {
+        selectedPhotoMarker.marker.dragging.enable();
+      }
+      paintPhotoMarker(selectedPhotoMarker);
+    }
+  }
+  points.forEach(point => {
+    const entry = {
+      point,
+      original: [point.lat, point.lon],
+      moved: false,
+      marker: null
+    };
+    const marker = L.marker([point.lat, point.lon], {
+      draggable: false,
+      keyboard: false,
+      icon: photoIcon(entry)
+    }).addTo(gpsMap);
+    entry.marker = marker;
+    photoMarkers.push(entry);
+    marker.bindTooltip(`<strong>${escapeHtml(point.name)}</strong><br>Click to select; drag to correct this image`);
+    if (!readOnly) {
+      marker.on('click', event => {
+        if (event.originalEvent) L.DomEvent.stopPropagation(event.originalEvent);
+        selectPhotoMarker(entry);
+      });
+      marker.on('dragend', () => {
+        const position = marker.getLatLng();
+        entry.point.lat = position.lat;
+        entry.point.lon = position.lng;
+        entry.moved = (
+          Math.abs(position.lat - entry.original[0]) > 1e-9
+          || Math.abs(position.lng - entry.original[1]) > 1e-9
+        );
+        paintPhotoMarker(entry);
+        updateIndividualGpsControls();
+      });
+    }
+    bounds.push([point.lat, point.lon]);
+  });
+  sitePoints.forEach(point => {
     const marker = L.circleMarker([point.lat, point.lon], {
       radius: 7,
       color: '#ffffff',
       weight: 2,
-      fillColor: color,
+      fillColor: '#1a7f37',
       fillOpacity: 1
     }).addTo(gpsMap);
     const link = point.url ? `<br><a href="${escapeHtml(point.url)}" target="_blank" rel="noopener">Open SAC marker</a>` : '';
     marker.bindTooltip(`<strong>${escapeHtml(point.name)}</strong>${link}`);
     bounds.push([point.lat, point.lon]);
   });
+  gpsMap.on('click', () => selectPhotoMarker(null));
   const defaultPoint = cluster.latitude != null && cluster.longitude != null
     ? [Number(cluster.latitude), Number(cluster.longitude)]
     : bounds[0] || null;
@@ -410,6 +493,52 @@ async function previewGpsMove() {
   }
 }
 
+function movedPhotoMarkers() {
+  return photoMarkers.filter(entry => entry.moved);
+}
+
+function updateIndividualGpsControls() {
+  const moved = movedPhotoMarkers();
+  const controls = document.getElementById('individual-gps-controls');
+  controls.hidden = moved.length === 0;
+  document.getElementById('individual-gps-count').textContent =
+    `${moved.length} individual image move(s) pending`;
+}
+
+function cancelIndividualGpsMoves() {
+  movedPhotoMarkers().forEach(entry => {
+    entry.point.lat = entry.original[0];
+    entry.point.lon = entry.original[1];
+    entry.marker.setLatLng(entry.original);
+    entry.moved = false;
+    paintPhotoMarker(entry);
+  });
+  selectPhotoMarker(null);
+  updateIndividualGpsControls();
+  document.getElementById('gps-plan').textContent = 'Individual moves cancelled.';
+}
+
+async function previewIndividualGpsMoves() {
+  const container = document.getElementById('gps-plan');
+  const moves = movedPhotoMarkers().map(entry => ({
+    path: entry.point.path,
+    latitude: entry.point.lat,
+    longitude: entry.point.lon
+  }));
+  if (!moves.length) {
+    container.textContent = 'Move at least one photo point first.';
+    return;
+  }
+  try {
+    const result = await api(`/api/runs/${encodeURIComponent(runId)}/clusters/${encodeURIComponent(clusterId)}/gps/preview`, {moves});
+    pendingGpsPlan = result.plan;
+    const rows = pendingGpsPlan.items.map(item => `<li><code>${escapeHtml(item.path)}</code>: ${escapeHtml(item.before.latitude ?? 'no GPS')}, ${escapeHtml(item.before.longitude ?? 'no GPS')} → ${escapeHtml(item.after.latitude)}, ${escapeHtml(item.after.longitude)}</li>`).join('');
+    container.innerHTML = `<strong>${pendingGpsPlan.items.length} individual image(s) would move.</strong><ul>${rows}</ul><button class="primary" onclick="applyPlan('gps')">Apply previewed individual GPS</button>`;
+  } catch (error) {
+    container.textContent = error.message;
+  }
+}
+
 function setColumnRatio(ratio) {
   const columns = document.getElementById('detail-view');
   ratio = Math.max(30, Math.min(70, ratio));
@@ -465,6 +594,27 @@ function initResizers() {
 
 document.getElementById('latitude').addEventListener('change', moveTargetFromFields);
 document.getElementById('longitude').addEventListener('change', moveTargetFromFields);
+document.addEventListener('keydown', event => {
+  if (event.ctrlKey && event.key === 'ArrowLeft') {
+    event.preventDefault();
+    location.href = document.getElementById('previous-cluster').href;
+    return;
+  }
+  if (event.ctrlKey && event.key === 'ArrowRight') {
+    event.preventDefault();
+    location.href = document.getElementById('next-cluster').href;
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  const editors = [...document.querySelectorAll('.tag-editor:not(:disabled)')];
+  const index = editors.indexOf(document.activeElement);
+  if (index < 0) return;
+  const next = event.shiftKey ? index - 1 : index + 1;
+  if (next >= 0 && next < editors.length) {
+    event.preventDefault();
+    editors[next].focus();
+  }
+});
 initResizers();
 initGpsMap();
 </script>
