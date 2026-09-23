@@ -44,6 +44,8 @@
   },
   "paths": {
     "artists": "data/artists.csv",
+    "city_cache": "data/cities",
+    "reference_images": "data/ref_images",
     "runs": "_runs"
   },
   "read_only": false

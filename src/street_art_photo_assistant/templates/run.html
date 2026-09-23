@@ -25,10 +25,13 @@
       </a>
       <p>{{ cluster.photos|length }} primary · {{ cluster.context_photos|length }} context</p>
       <p class="muted">{% if cluster.latitude is not none %}{{ '%.6f'|format(cluster.latitude) }}, {{ '%.6f'|format(cluster.longitude) }}{% else %}No GPS{% endif %}</p>
+      {% if cluster.street_art_cities %}
+        <p><strong>{{ cluster.street_art_cities.status }}</strong></p>
+        <p class="muted">{{ cluster.street_art_cities.recommendation }}</p>
+      {% endif %}
     </article>
   {% endfor %}
   </div>
 </main>
 </body>
 </html>
-

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+CITY_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "version": 1,
@@ -40,7 +42,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "profile": "balanced",
         "candidate_radius_m": 80,
     },
-    "paths": {"artists": "data/artists.csv", "runs": "_runs"},
+    "paths": {
+        "artists": "data/artists.csv",
+        "city_cache": "data/cities",
+        "reference_images": "data/ref_images",
+        "runs": "_runs",
+    },
     "read_only": False,
 }
 
@@ -91,6 +98,12 @@ def validate_config(config: dict[str, Any]) -> None:
         "quick", "balanced", "thorough"
     }:
         raise ValueError("matching.profile is invalid")
+    matching_enabled = bool(
+        config["matching"].get("street_art_cities_enabled")
+    )
+    city = str(config["matching"].get("city") or "")
+    if matching_enabled and not CITY_SLUG_RE.fullmatch(city):
+        raise ValueError("matching.city must be a lowercase slug")
 
 
 def load_config(path: Path) -> dict[str, Any]:

@@ -31,8 +31,11 @@ apply endpoints while keeping preview and reports available.
 - `clustering.radius_m` controls geographic grouping.
 - `gps_repair.maximum_time_difference_seconds` limits reference transfer.
 - `matching.candidate_radius_m` limits nearby Street Art Cities candidates.
-- The visual profile controls local candidate effort without changing GPS or
-  clustering thresholds.
+- `matching.profile` limits candidates per cluster to 4 (`quick`), 8
+  (`balanced`), or 16 (`thorough`).
+- `paths.city_cache` and `paths.reference_images` select local provider caches.
+- Visual matching uses a fixed local ORB threshold; the profile changes only
+  candidate effort, not GPS or clustering thresholds.
 
 ## Provider boundary
 

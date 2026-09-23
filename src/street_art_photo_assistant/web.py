@@ -29,6 +29,7 @@ from .metadata import apply_tag_edit_plan, build_tag_edit_plan
 from .models import PhotoRecord
 from .photos import read_photo
 from .runs import RunManager
+from .sac import cached_cities
 from .workflow import scan_and_select, sources_from_config
 
 
@@ -199,6 +200,9 @@ def create_app(
             artists_path=resolve_local_path(
                 config_root, str(current_config()["paths"]["artists"])
             ),
+            cached_cities=cached_cities(resolve_local_path(
+                config_root, str(current_config()["paths"]["city_cache"])
+            )),
             runs=manager.list_runs(),
         )
 
@@ -332,6 +336,10 @@ def create_app(
             source["path"] = str(resolve_local_path(
                 config_root, str(source["path"])
             ))
+        for key in ("artists", "city_cache", "reference_images", "runs"):
+            run_config["paths"][key] = str(resolve_local_path(
+                config_root, str(run_config["paths"][key])
+            ))
         visual = bool(run_config["matching"].get("visual_enabled", False))
         return jsonify({"ok": True, "run": manager.start(
             run_config, visual=visual
@@ -419,6 +427,17 @@ def create_app(
     def photo():
         path = Path(str(request.args.get("path") or "")).resolve()
         if not _inside(path, source_roots()) or not path.is_file():
+            abort(404)
+        return send_file(path)
+
+    @app.get("/reference")
+    def reference():
+        path = Path(str(request.args.get("path") or "")).resolve()
+        root = resolve_local_path(
+            config_root,
+            str(current_config()["paths"]["reference_images"]),
+        )
+        if not _inside(path, [root]) or not path.is_file():
             abort(404)
         return send_file(path)
 

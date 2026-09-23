@@ -63,6 +63,34 @@ class WebTests(unittest.TestCase):
         self.assertIn("Apply previewed GPS fixes", page)
         self.assertIn("Refresh &amp; run", page)
 
+    def test_cached_cities_are_suggested(self):
+        cache = self.root / "data" / "cities"
+        cache.mkdir(parents=True)
+        (cache / "test-city.json").write_text("{}", encoding="utf-8")
+        response = self.client.get("/")
+        self.assertIn(
+            '<option value="test-city">',
+            response.get_data(as_text=True),
+        )
+
+    def test_reference_route_is_confined_to_configured_cache(self):
+        cache = self.root / "data" / "ref_images"
+        cache.mkdir(parents=True)
+        reference = cache / "marker.jpg"
+        reference.write_bytes(b"synthetic")
+
+        response = self.client.get("/reference", query_string={
+            "path": str(reference),
+        })
+        self.assertEqual(200, response.status_code)
+        response.close()
+        self.assertEqual(
+            404,
+            self.client.get("/reference", query_string={
+                "path": str(self.located),
+            }).status_code,
+        )
+
     def test_complete_config_is_saved(self):
         self.config["run_label"] = "Synthetic test"
         response = self.client.post("/api/config", json=self.config)

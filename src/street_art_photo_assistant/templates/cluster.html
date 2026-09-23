@@ -57,6 +57,27 @@
     {% endfor %}
     </div>
   </section>
+
+  {% if cluster.street_art_cities %}
+  <section class="card">
+    <h2>Street Art Cities evidence</h2>
+    <p><strong>{{ cluster.street_art_cities.status }}</strong> — {{ cluster.street_art_cities.recommendation }}</p>
+    <div class="cluster-grid">
+    {% for candidate in cluster.street_art_cities.candidates %}
+      <article>
+        {% if candidate.cached_image %}<img src="{{ url_for('reference', path=candidate.cached_image) }}" alt="Street Art Cities reference">{% endif %}
+        <h3>{{ candidate.artist or candidate.title or candidate.marker_id }}</h3>
+        <p>{{ candidate.distance_m }} m · {{ candidate.status }}</p>
+        {% if candidate.visual_similarity is defined and candidate.visual_similarity is not none %}<p>Visual similarity: {{ '%.3f'|format(candidate.visual_similarity) }}</p>{% endif %}
+        {% if candidate.visual_error %}<p class="muted">Reference image unavailable: {{ candidate.visual_error }}</p>{% endif %}
+        <a href="{{ candidate.url }}" target="_blank" rel="noopener noreferrer">Open marker</a>
+      </article>
+    {% else %}
+      <p class="muted">No nearby marker.</p>
+    {% endfor %}
+    </div>
+  </section>
+  {% endif %}
 </main>
 <script>
 const runId = {{ run_id|tojson }};

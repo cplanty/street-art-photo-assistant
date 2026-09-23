@@ -21,13 +21,23 @@ def write_cluster_report(
     clusters: Iterable[PhotoCluster],
     json_path: Path,
     markdown_path: Path,
+    *,
+    city: str | None = None,
+    sac_evidence: dict[str, dict] | None = None,
 ) -> None:
-    """Write review-compatible offline JSON and concise Markdown."""
+    """Write review-compatible JSON and concise Markdown."""
 
     cluster_list = list(clusters)
+    cluster_payloads = []
+    for cluster in cluster_list:
+        payload = cluster.to_dict()
+        if sac_evidence is not None:
+            payload["street_art_cities"] = sac_evidence.get(cluster.id)
+        cluster_payloads.append(payload)
     payload = {
-        "mode": "cluster-only",
-        "clusters": [cluster.to_dict() for cluster in cluster_list],
+        "mode": "street-art-cities" if sac_evidence is not None else "cluster-only",
+        "city": city,
+        "clusters": cluster_payloads,
     }
     _atomic_text(
         json_path,
@@ -36,7 +46,11 @@ def write_cluster_report(
     lines = [
         "# Street Art Photo Clusters",
         "",
-        "Street Art Cities matching was disabled for this report.",
+        (
+            f"Street Art Cities city: **{city}**"
+            if sac_evidence is not None
+            else "Street Art Cities matching was disabled for this report."
+        ),
         "",
         f"Clusters: **{len(cluster_list)}**",
         "",
@@ -53,7 +67,13 @@ def write_cluster_report(
             f"- Location: {location}",
             f"- Primary photos: {len(cluster.photos)}",
             f"- Context photos: {len(cluster.context_photos)}",
-            "",
         ])
+        if sac_evidence is not None:
+            evidence = sac_evidence.get(cluster.id) or {}
+            lines.extend([
+                f"- SAC status: {evidence.get('status', 'unknown')}",
+                f"- Recommendation: {evidence.get('recommendation', 'Review')}",
+                f"- Nearby candidates: {len(evidence.get('candidates') or [])}",
+            ])
+        lines.append("")
     _atomic_text(markdown_path, "\n".join(lines))
-

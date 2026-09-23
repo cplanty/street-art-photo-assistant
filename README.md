@@ -18,14 +18,16 @@ affiliated with or endorsed by Street Art Cities.
 - Repair missing GPS from same-camera or trusted cross-camera references.
 - Preview explicit manual GPS positioning and log every metadata change.
 - Generate cancellable persistent runs and review clusters in the browser.
+- Optionally refresh a complete Street Art Cities city marker set and compare
+  nearby candidates by artist, GPS, and local OpenCV evidence.
 - Inspect exact tag/GPS plans before applying them from cluster detail pages.
 - Keep all configuration, reports, and cached data on the local computer.
 - Use explicit typed data contracts for photos, clusters, repair plans, and
   runs.
 - Start one local web application with no account or cloud service.
 
-Optional Street Art Cities matching is implemented in a subsequent focused
-commit. Every other core workflow remains fully offline.
+Street Art Cities matching is optional. Every other core workflow remains
+fully offline.
 
 ## Install
 
@@ -69,6 +71,7 @@ or other local data.
 - [Customization](docs/customization.md)
 - [Data formats](docs/data-formats.md)
 - [Workflows](docs/workflows.md)
+- [Street Art Cities integration](docs/sac-integration.md)
 - [Development](docs/development.md)
 
 ## License

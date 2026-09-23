@@ -14,6 +14,18 @@
 Changing any source or filter invalidates the preview, GPS plan, and report
 action. Disabled actions are grey.
 
+## Compare with Street Art Cities
+
+Enable **Compare with Street Art Cities**, choose or enter a lowercase city
+slug, and run the report. The run refreshes the city's complete public marker
+set, then considers only markers within `matching.candidate_radius_m` of each
+cluster. Same-artist candidates rank before other nearby markers.
+
+Enable visual matching to download and locally compare a bounded number of
+candidate reference images. A failed or invalid image is shown on that
+candidate and does not discard the rest of the report. See
+[Street Art Cities integration](sac-integration.md).
+
 ## Repair missing GPS
 
 Target roles identify sources whose missing coordinates may be changed.
@@ -34,4 +46,3 @@ separate confirmation.
 Each run owns a directory containing its config snapshot, manifest, command,
 log, preview, JSON report, and Markdown report. Active runs can be cancelled.
 Inactive runs can be deleted from the generator after confirmation.
-

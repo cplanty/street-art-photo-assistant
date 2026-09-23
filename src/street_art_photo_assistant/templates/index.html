@@ -65,7 +65,8 @@
           <input id="sac_enabled" type="checkbox">
           Compare with Street Art Cities
         </label>
-        <label>City slug <input id="city" placeholder="for example: paris"></label>
+        <label>City slug <input id="city" list="cached-cities" placeholder="for example: orleans"></label>
+        <datalist id="cached-cities">{% for city in cached_cities %}<option value="{{ city }}">{% endfor %}</datalist>
         <p class="muted">Leave matching disabled for a completely offline cluster report.</p>
 
         <div class="subsection">

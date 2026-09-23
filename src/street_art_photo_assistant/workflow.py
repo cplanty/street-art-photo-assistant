@@ -111,10 +111,34 @@ def run_offline_clustering(
 
     output_directory.mkdir(parents=True, exist_ok=True)
     _atomic_json(output_directory / "preview.json", asdict(preview))
+    matching = config["matching"]
+    city = None
+    evidence = None
+    if matching.get("street_art_cities_enabled"):
+        from .sac import compare_clusters, refresh_city
+
+        city = str(matching.get("city") or "").strip().lower()
+        paths = config["paths"]
+        city_payload = refresh_city(
+            city, _resolve(config_root, paths["city_cache"])
+        )
+        evidence = compare_clusters(
+            clusters,
+            city_payload,
+            artist_mapping_path=_resolve(config_root, paths["artists"]),
+            reference_cache=_resolve(
+                config_root, paths["reference_images"]
+            ),
+            candidate_radius_m=float(matching["candidate_radius_m"]),
+            visual_enabled=bool(matching.get("visual_enabled")),
+            profile=str(matching["profile"]),
+        )
     write_cluster_report(
         clusters,
         output_directory / "report.json",
         output_directory / "report.md",
+        city=city,
+        sac_evidence=evidence,
     )
     return {
         "scanned": preview.scanned,

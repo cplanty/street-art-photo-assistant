@@ -40,7 +40,19 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "tagged_mode"):
                 load_config(path)
 
+    def test_enabled_matching_requires_a_safe_city_slug(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "config.local.json"
+            path.write_text(json.dumps({
+                "version": 1,
+                "matching": {
+                    "street_art_cities_enabled": True,
+                    "city": "../Example",
+                },
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "lowercase slug"):
+                load_config(path)
+
 
 if __name__ == "__main__":
     unittest.main()
-

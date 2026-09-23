@@ -29,7 +29,18 @@ optional for user-added rows.
 ## Cluster report
 
 A cluster records a stable ID, normalized tag, primary photos, context photos,
-centroid, and optional local visual subgroup.
+centroid, and optional local visual subgroup. When Street Art Cities matching
+is enabled, `street_art_cities` records the city, classification,
+recommendation, resolved artist slug, and nearby candidates. Candidate evidence
+includes marker metadata, distance, artist agreement, optional cached-image
+path and similarity, and any explicit reference-image error.
+
+## Street Art Cities city cache
+
+`data/cities/<slug>.json` contains the cache format version, city slug, refresh
+time, and normalized artwork markers. Marker status is preserved, including
+removed markers, so the report can explain rather than silently discard nearby
+historical entries.
 
 ## GPS repair plan
 
@@ -44,4 +55,3 @@ count, and output paths. Change logs contain operation, plan ID, status, time,
 file, before value, and after value. `status: applying` means earlier listed
 writes completed before a later interruption; `status: complete` means the
 entire plan finished.
-
