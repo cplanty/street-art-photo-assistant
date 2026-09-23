@@ -70,9 +70,9 @@
         <p class="muted">Leave matching disabled for a completely offline cluster report.</p>
         <label class="check">
           <input id="download_images" type="checkbox">
-          Scrape SAC pictures too
+          Cache all SAC city pictures
         </label>
-        <p class="muted">Downloads and caches marker pictures for the GPS map and evidence. Off by default; large cities can require many sequential, throttled requests.</p>
+        <p class="muted">Off by default: only bounded candidate pictures needed by visual matching are cached. Enable this to incrementally cache every city marker picture; large cities can require many sequential, throttled requests.</p>
 
         <div class="subsection">
           <h3>Visual matching</h3>
@@ -159,6 +159,7 @@
     <h2>3. Generate report</h2>
     <label>Run label <input id="run_label" placeholder="optional"></label>
     <button id="run-button" class="primary" type="button" onclick="startRun()" disabled>Refresh &amp; run</button>
+    <button id="run-cancel-button" type="button" onclick="cancelCurrentRun()" disabled>Cancel</button>
     <span id="run-message" class="muted"></span>
     <div id="run-progress-panel" class="run-progress" hidden>
       <div class="run-progress-heading">
@@ -452,6 +453,7 @@ async function startRun() {
   if (!previewToken) return;
   readForm();
   byId('run-button').disabled = true;
+  byId('run-cancel-button').disabled = true;
   byId('run-message').textContent = 'Starting…';
   byId('run-progress-panel').hidden = false;
   try {
@@ -460,9 +462,28 @@ async function startRun() {
       body: JSON.stringify({config, preview_token: previewToken})
     });
     currentRun = result.run.id;
+    byId('run-cancel-button').disabled = false;
     pollRun();
   } catch (error) {
     byId('run-message').textContent = error.message;
+    byId('run-button').disabled = !previewToken;
+    byId('run-cancel-button').disabled = true;
+  }
+}
+
+async function cancelCurrentRun() {
+  if (!currentRun) return;
+  byId('run-cancel-button').disabled = true;
+  byId('run-message').textContent = 'Cancelling…';
+  try {
+    await api(`/api/runs/${encodeURIComponent(currentRun)}/cancel`, {
+      method: 'POST',
+      body: '{}'
+    });
+    pollRun();
+  } catch (error) {
+    byId('run-message').textContent = error.message;
+    byId('run-cancel-button').disabled = false;
   }
 }
 
@@ -489,10 +510,13 @@ async function pollRun() {
     byId('run-log').hidden = !run.log;
     byId('run-log').textContent = run.log || '';
     if (['queued','running'].includes(run.status)) {
+      byId('run-cancel-button').disabled = false;
       setTimeout(pollRun, 1000);
     } else {
       await refreshRecentRuns();
       currentRun = null;
+      byId('run-cancel-button').disabled = true;
+      byId('run-button').disabled = !previewToken;
     }
   } catch (error) {
     byId('run-message').textContent = error.message;

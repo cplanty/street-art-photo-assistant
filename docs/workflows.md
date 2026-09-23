@@ -19,6 +19,10 @@ bounded live log tail. Progress survives a page refresh because each run writes
 `progress.json`. On completion, the new report is inserted into **Recent runs**
 without requiring a page reload.
 
+The adjacent **Cancel** button is enabled only while the current Generate run
+is queued or running. Cancellation terminates that run and preserves its
+cancelled status in **Recent runs**.
+
 Editing the optional run label after selection preview does not invalidate the
 preview or disable **Refresh & run**.
 

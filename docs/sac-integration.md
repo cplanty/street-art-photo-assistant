@@ -60,13 +60,14 @@ limited to 20 MB, and must decode as an image before atomic caching under
 `paths.reference_images`. A failed candidate image is recorded as evidence and
 does not abort the complete city report.
 
-**Scrape SAC pictures too** maps to `matching.download_images` and defaults to
-`false`. When enabled, every marker with an image URL is processed sequentially
-through the same cache, validation, throttle, progress, and error handling.
-Nearby cached images then appear in both Street Art Cities evidence and GPS map
-marker popups. When disabled, metadata-only matching downloads no city-wide
-images; visual matching may still fetch its bounded nearby candidates because
-the comparison requires image bytes.
+**Cache all SAC city pictures** maps to `matching.download_images` and defaults
+to `false`. When enabled, every marker with an image URL is processed
+sequentially through the same incremental cache, validation, throttle,
+progress, and error handling. Nearby cached images then appear in both Street
+Art Cities evidence and GPS map marker popups. When disabled, metadata-only
+matching downloads no city-wide images; visual matching caches only its bounded
+nearby candidates because the comparison requires image bytes. Changing this
+option never removes existing cached pictures.
 
 The Generate page shows durable progress for city refresh, cluster candidate
 gathering, and every cached/downloaded reference image. It warns when marker or
