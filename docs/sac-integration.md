@@ -18,6 +18,21 @@ The normalized response is written atomically to
 failure fails the run explicitly rather than silently using stale data.
 Matching-disabled runs do not import the adapter or make provider requests.
 
+## Incremental behavior
+
+Marker metadata is refreshed as one complete city snapshot on every run. The
+application does not request only changed markers: it downloads the single
+`markers.json` response, normalizes it, and atomically replaces the previous
+city cache. This makes additions, updates, and removals visible immediately.
+
+Reference-picture caching is incremental. A non-empty cached image for a marker
+is reused without another request, so later runs download only pictures missing
+from the local cache. The current cache is keyed by marker ID and does not store
+the source image URL or a remote fingerprint. If Street Art Cities replaces the
+picture for an existing marker without changing its ID, the cached picture is
+therefore retained. Delete that marker's cached image, or clear the configured
+`paths.reference_images` cache, to force it to be downloaded again.
+
 Every request identifies itself as:
 
 ```text
