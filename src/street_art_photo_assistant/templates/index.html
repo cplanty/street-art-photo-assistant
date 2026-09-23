@@ -108,6 +108,19 @@
         </div>
         <button type="button" onclick="saveConfiguration(false)">Save configuration now</button>
         <span id="config-message" class="muted"></span>
+        <div class="subsection">
+          <h3>Diagnostics</h3>
+          <p class="muted">Create a local, redacted ZIP to inspect before attaching it to an issue. Photos, raw reports, GPS coordinates, artist data, and raw configuration are excluded.</p>
+          <label class="check">
+            <input id="diagnostics-detailed" type="checkbox">
+            Include sanitized recent run logs
+          </label>
+          <div class="button-row">
+            <button type="button" onclick="generateDiagnostics()">Generate diagnostic package</button>
+            <button id="diagnostics-open" type="button" onclick="openLocal('diagnostics')" disabled>Open package folder</button>
+          </div>
+          <p id="diagnostics-message" class="muted"></p>
+        </div>
       </section>
     </div>
   </div>
@@ -343,6 +356,23 @@ async function openLocal(target) {
   }
 }
 
+async function generateDiagnostics() {
+  const message = byId('diagnostics-message');
+  message.textContent = 'Creating redacted package…';
+  try {
+    const result = await api('/api/diagnostics', {
+      method: 'POST',
+      body: JSON.stringify({
+        detailed: byId('diagnostics-detailed').checked
+      })
+    });
+    message.innerHTML = `<strong>${escapeHtml(result.level)} package created.</strong><br><code>${escapeHtml(result.path)}</code><br>Inspect the ZIP before sharing it.`;
+    byId('diagnostics-open').disabled = false;
+  } catch (error) {
+    message.textContent = error.message;
+  }
+}
+
 async function previewSelection() {
   readForm();
   byId('preview-message').textContent = 'Scanning metadata…';
@@ -447,7 +477,9 @@ async function deleteRun(id) {
 }
 
 document.querySelectorAll('input,select,textarea').forEach(element => {
-  if (!['auto_save'].includes(element.id)) element.addEventListener('input', changed);
+  if (!['auto_save', 'diagnostics-detailed'].includes(element.id)) {
+    element.addEventListener('input', changed);
+  }
 });
 byId('auto_save').addEventListener('change', () => saveConfiguration(false));
 writeForm();

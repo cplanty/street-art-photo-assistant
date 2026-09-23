@@ -76,6 +76,7 @@ or other local data.
 - [Data formats](docs/data-formats.md)
 - [Workflows](docs/workflows.md)
 - [Street Art Cities integration](docs/sac-integration.md)
+- [Diagnostics and issue reports](docs/diagnostics.md)
 - [Development](docs/development.md)
 
 ## License

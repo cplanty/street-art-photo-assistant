@@ -79,12 +79,27 @@ class WebTests(unittest.TestCase):
         self.assertIn("Preview selection", page)
         self.assertIn("Apply previewed GPS fixes", page)
         self.assertIn("Refresh &amp; run", page)
+        self.assertIn("Generate diagnostic package", page)
         self.assertIn(
             "Preview complete. You can now generate report",
             page,
         )
         self.assertNotIn('id="temporary_folder" readonly', page)
         self.assertNotIn('readonly placeholder="Choose a folder"', page)
+
+    def test_generates_local_redacted_diagnostic_bundle(self):
+        response = self.client.post(
+            "/api/diagnostics", json={"detailed": False}
+        )
+
+        self.assertEqual(200, response.status_code)
+        payload = response.get_json()
+        self.assertEqual("safe", payload["level"])
+        bundle = Path(payload["path"])
+        self.assertTrue(bundle.is_file())
+        self.assertTrue(
+            bundle.is_relative_to(self.manager.run_root / "_diagnostics")
+        )
 
     def test_cached_cities_are_suggested(self):
         cache = self.root / "data" / "cities"

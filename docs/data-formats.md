@@ -55,3 +55,10 @@ count, and output paths. Change logs contain operation, plan ID, status, time,
 file, before value, and after value. `status: applying` means earlier listed
 writes completed before a later interruption; `status: complete` means the
 entire plan finished.
+
+## Diagnostic bundle
+
+Diagnostic ZIPs contain environment, configuration summary, run summaries,
+bounded route logs, and a bundle manifest. Detailed bundles may add sanitized
+run logs. See [Diagnostics and issue reports](diagnostics.md) for the strict
+exclusion and redaction policy.

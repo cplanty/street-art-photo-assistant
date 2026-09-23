@@ -7,6 +7,8 @@ import hashlib
 import json
 import os
 import subprocess
+import threading
+import time
 import uuid
 from copy import deepcopy
 from dataclasses import asdict
@@ -17,6 +19,7 @@ from typing import Any
 from flask import (
     Flask,
     abort,
+    g,
     jsonify,
     redirect,
     render_template,
@@ -26,6 +29,7 @@ from flask import (
 )
 
 from .config import resolve_local_path, save_config, validate_config
+from .diagnostics import create_diagnostic_bundle
 from .gps import apply_gps_plan, build_manual_gps_plan, build_missing_gps_plan
 from .metadata import apply_tag_edit_plan, build_tag_edit_plan
 from .models import PhotoRecord
@@ -134,6 +138,8 @@ def create_app(
     manager = run_manager or RunManager(runs_path)
     plan_root = manager.run_root / "_plans"
     plan_root.mkdir(parents=True, exist_ok=True)
+    app_log_path = manager.run_root / "_logs" / "app.jsonl"
+    app_log_lock = threading.Lock()
 
     app = Flask(__name__)
     app.config["ASSISTANT_STATE"] = state
@@ -142,6 +148,32 @@ def create_app(
 
     def current_config() -> dict[str, Any]:
         return state["config"]
+
+    def append_app_event(payload: dict[str, Any]) -> None:
+        event = {
+            "timestamp": datetime.now().astimezone().isoformat(),
+            **payload,
+        }
+        app_log_path.parent.mkdir(parents=True, exist_ok=True)
+        with app_log_lock:
+            if app_log_path.is_file() and app_log_path.stat().st_size >= 2_000_000:
+                oldest = app_log_path.with_suffix(".jsonl.3")
+                oldest.unlink(missing_ok=True)
+                for index in (2, 1):
+                    source = app_log_path.with_suffix(f".jsonl.{index}")
+                    if source.is_file():
+                        os.replace(
+                            source,
+                            app_log_path.with_suffix(f".jsonl.{index + 1}"),
+                        )
+                os.replace(
+                    app_log_path,
+                    app_log_path.with_suffix(".jsonl.1"),
+                )
+            with app_log_path.open(
+                "a", encoding="utf-8", newline="\n"
+            ) as stream:
+                stream.write(json.dumps(event, ensure_ascii=False) + "\n")
 
     def source_roots() -> list[Path]:
         return [
@@ -213,21 +245,59 @@ def create_app(
 
     @app.errorhandler(ValueError)
     def value_error(exc: ValueError):
+        append_app_event({
+            "kind": "error",
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+        })
         if request.path.startswith("/api/"):
             return jsonify({"ok": False, "error": str(exc)}), 400
         return str(exc), 400
 
     @app.errorhandler(OSError)
     def os_error(exc: OSError):
+        append_app_event({
+            "kind": "error",
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+        })
         if request.path.startswith("/api/"):
             return jsonify({"ok": False, "error": str(exc)}), 500
         return str(exc), 500
 
     @app.errorhandler(RuntimeError)
     def runtime_error(exc: RuntimeError):
+        append_app_event({
+            "kind": "error",
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+        })
         if request.path.startswith("/api/"):
             return jsonify({"ok": False, "error": str(exc)}), 500
         return str(exc), 500
+
+    @app.before_request
+    def start_request_timer() -> None:
+        g.request_started = time.monotonic()
+
+    @app.after_request
+    def log_request(response):
+        started = getattr(g, "request_started", None)
+        duration_ms = (
+            round((time.monotonic() - started) * 1000, 1)
+            if started is not None else None
+        )
+        append_app_event({
+            "kind": "request",
+            "method": request.method,
+            "route": (
+                request.url_rule.rule
+                if request.url_rule is not None else "<unmatched>"
+            ),
+            "status": response.status_code,
+            "duration_ms": duration_ms,
+        })
+        return response
 
     @app.get("/")
     def index() -> str:
@@ -284,6 +354,9 @@ def create_app(
             path = resolve_local_path(
                 config_root, str(current_config()["paths"]["artists"])
             )
+        elif target == "diagnostics":
+            path = manager.run_root / "_diagnostics"
+            path.mkdir(parents=True, exist_ok=True)
         else:
             candidate = Path(target).resolve()
             if not _inside(candidate, source_roots()):
@@ -305,6 +378,22 @@ def create_app(
         else:
             raise ValueError("Unknown local open action")
         return jsonify({"ok": True})
+
+    @app.post("/api/diagnostics")
+    def diagnostics():
+        payload = request.get_json(silent=True) or {}
+        detailed = bool(payload.get("detailed"))
+        bundle = create_diagnostic_bundle(
+            config=current_config(),
+            run_root=manager.run_root,
+            runs=manager.list_runs(),
+            detailed=detailed,
+        )
+        return jsonify({
+            "ok": True,
+            "path": str(bundle),
+            "level": "detailed" if detailed else "safe",
+        })
 
     @app.post("/api/preview")
     def preview():

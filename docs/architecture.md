@@ -31,6 +31,8 @@ local folders
   public reference images, and returns evidence without editing photos.
 - `runs.py` launches package subcommands without a shell and persists
   cancellable run manifests, logs, reports, summaries, and safe deletion.
+- `diagnostics.py` builds bounded, redacted, locally inspectable support
+  packages without copying raw reports or photo metadata.
 - `web.py` owns local routes, selection tokens, persisted edit plans, path
   boundaries, artist-assisted review data, local file actions, and templates.
 
