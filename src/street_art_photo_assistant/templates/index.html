@@ -7,15 +7,449 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body>
-  <main>
-    <h1>Street Art Photo Assistant</h1>
-    <p>Cluster, geotag, tag, and compare street-art photos.</p>
-    <section>
-      <h2>Configuration</h2>
-      <p><code>{{ config_path }}</code></p>
-      <p>{{ sources|length }} configured photo source(s).</p>
+<main>
+  <header class="page-header">
+    <div>
+      <h1>Street Art Photo Assistant</h1>
+      <p>Preview the selection, optionally repair missing GPS, then generate the report.</p>
+    </div>
+  </header>
+
+  <div class="two-columns">
+    <section class="card">
+      <h3>Photo sources</h3>
+      <div id="sources"></div>
+      <button type="button" onclick="addSource()">+ Add source</button>
+
+      <div class="subsection">
+        <h3>Capture period</h3>
+        <div class="form-row">
+          <label>Start date <input id="start" type="date"></label>
+          <label>End date <input id="end" type="date"></label>
+        </div>
+        <div class="form-row">
+          <label>Start time <input id="start_time" type="time"></label>
+          <label>End time <input id="end_time" type="time"></label>
+        </div>
+        <label>Photos without GPS
+          <select id="missing_gps">
+            <option value="include">Include</option>
+            <option value="exclude">Exclude</option>
+            <option value="only">Only without GPS</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="subsection">
+        <h3>Tags filtering</h3>
+        <label>Photos
+          <select id="tagged_mode">
+            <option value="both">Tagged and untagged</option>
+            <option value="tagged">Tagged only</option>
+            <option value="untagged">Untagged only</option>
+          </select>
+        </label>
+        <label>Include tags, one per line
+          <textarea id="include_tags" rows="4"></textarea>
+        </label>
+        <label>Exclude tags, one per line
+          <textarea id="exclude_tags" rows="4"></textarea>
+        </label>
+      </div>
     </section>
-  </main>
+
+    <div class="column">
+      <section class="card">
+        <h3>Street Art Cities matching</h3>
+        <label class="check">
+          <input id="sac_enabled" type="checkbox">
+          Compare with Street Art Cities
+        </label>
+        <label>City slug <input id="city" placeholder="for example: paris"></label>
+        <p class="muted">Leave matching disabled for a completely offline cluster report.</p>
+
+        <div class="subsection">
+          <h3>Visual matching</h3>
+          <label class="check">
+            <input id="visual_enabled" type="checkbox">
+            Split ambiguous local clusters visually
+          </label>
+          <label>Profile
+            <select id="profile">
+              <option value="quick">Quick</option>
+              <option value="balanced">Balanced</option>
+              <option value="thorough">Thorough</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Configuration</h2>
+        <label>Temporary photo folder
+          <span class="input-action">
+            <input id="temporary_folder" readonly>
+            <button type="button" onclick="browseTemporary()">Browse…</button>
+          </span>
+        </label>
+        <p class="muted">Used for review copies; defaults to <code>_tmp_photos</code>.</p>
+        <div class="file-row">
+          <code>{{ artists_path }}</code>
+          <button type="button" onclick="openLocal('artists')">Open artists.csv</button>
+        </div>
+        <label class="check">
+          <input id="auto_save" type="checkbox">
+          Auto save config
+        </label>
+        <div class="file-row">
+          <code>{{ config_path }}</code>
+          <button type="button" onclick="openLocal('config')">Open config file</button>
+        </div>
+        <button type="button" onclick="saveConfiguration(false)">Save configuration now</button>
+        <span id="config-message" class="muted"></span>
+      </section>
+    </div>
+  </div>
+
+  <section class="card stage">
+    <h2>1. Preview selection</h2>
+    <button class="primary" type="button" onclick="previewSelection()">Preview selection</button>
+    <span id="preview-message" class="muted"></span>
+    <div id="preview-result"></div>
+  </section>
+
+  <section class="card stage">
+    <h2>2. GPS repair <span class="muted">— optional</span></h2>
+    <p>Fill missing coordinates from nearby captures in the same or another configured source.</p>
+    <div class="form-row">
+      <fieldset><legend>Targets to modify</legend><div id="gps-targets"></div></fieldset>
+      <fieldset><legend>Trusted references</legend><div id="gps-references"></div></fieldset>
+    </div>
+    <label>Maximum time difference
+      <input id="gps_threshold" type="number" min="1" max="3600"> seconds
+    </label>
+    <div class="button-row">
+      <button id="gps-preview-button" type="button" onclick="previewGps()" disabled>Preview missing-GPS fixes</button>
+      <button id="gps-apply-button" class="primary" type="button" onclick="applyGps()" disabled {% if config.read_only %}title="Read-only mode"{% endif %}>Apply previewed GPS fixes</button>
+      <span id="gps-message" class="muted"></span>
+    </div>
+    <div id="gps-result"></div>
+  </section>
+
+  <section class="card stage">
+    <h2>3. Generate report</h2>
+    <label>Run label <input id="run_label" placeholder="optional"></label>
+    <button id="run-button" class="primary" type="button" onclick="startRun()" disabled>Refresh &amp; run</button>
+    <span id="run-message" class="muted"></span>
+    <pre id="run-log" class="log" hidden></pre>
+  </section>
+
+  <section class="card">
+    <h2>Recent runs</h2>
+    <table>
+      <thead><tr><th>Run</th><th>Label</th><th>Status</th><th>Photos</th><th>Clusters</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for run in runs if not run.id.startswith('_') %}
+        <tr>
+          <td><code>{{ run.id }}</code></td>
+          <td>{{ run.label or '—' }}</td>
+          <td>{{ run.status }}</td>
+          <td>{{ run.selected_photos if run.selected_photos is not none else '—' }}</td>
+          <td>{{ run.clusters if run.clusters is not none else '—' }}</td>
+          <td>
+            {% if run.status == 'complete' %}<a class="button" href="{{ url_for('run_review', run_id=run.id) }}">Open</a>{% endif %}
+            {% if run.status in ['queued', 'running'] %}<button onclick="cancelRun('{{ run.id }}')">Cancel</button>{% else %}<button class="danger" onclick="deleteRun('{{ run.id }}')">Delete</button>{% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="muted">No runs yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+let config = {{ config|tojson }};
+let previewToken = null;
+let gpsPlanId = null;
+let autosaveTimer = null;
+let currentRun = null;
+
+const byId = id => document.getElementById(id);
+const lines = id => byId(id).value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[char]));
+
+async function api(url, options = {}) {
+  const response = await fetch(url, {
+    headers: {'Content-Type': 'application/json'},
+    ...options
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+  return payload;
+}
+
+function renderSources() {
+  byId('sources').innerHTML = config.sources.map((source, index) => `
+    <div class="source-row">
+      <input type="checkbox" ${source.enabled !== false ? 'checked' : ''} aria-label="Enabled"
+        onchange="config.sources[${index}].enabled=this.checked; changed()">
+      <input value="${escapeHtml(source.name)}" placeholder="Name"
+        oninput="config.sources[${index}].name=this.value; changed()">
+      <input value="${escapeHtml(source.path)}" readonly placeholder="Choose a folder">
+      <button type="button" onclick="browseSource(${index})">Browse…</button>
+      <button type="button" onclick="config.sources.splice(${index},1); renderSources(); changed()">Remove</button>
+    </div>`).join('');
+  renderGpsRoles();
+}
+
+function renderGpsRoles() {
+  const enabled = config.sources.filter(source => source.enabled !== false);
+  const roles = (key) => enabled.map(source => `
+    <label class="check"><input type="checkbox" ${source[key] ? 'checked' : ''}
+      onchange="setSourceRole('${escapeHtml(source.name)}','${key}',this.checked)">
+      ${escapeHtml(source.name || 'unnamed')}</label>`).join('') || '<span class="muted">No enabled sources</span>';
+  byId('gps-targets').innerHTML = roles('gps_target');
+  byId('gps-references').innerHTML = roles('gps_reference');
+}
+
+function setSourceRole(name, key, checked) {
+  const source = config.sources.find(item => item.name === name);
+  if (source) source[key] = checked;
+  invalidate();
+  scheduleAutosave();
+}
+
+function addSource() {
+  config.sources.push({name: '', path: '', enabled: false, gps_target: false, gps_reference: false});
+  renderSources();
+  changed();
+}
+
+async function browseSource(index) {
+  try {
+    const result = await api('/api/browse-folder', {
+      method: 'POST',
+      body: JSON.stringify({initial: config.sources[index].path || ''})
+    });
+    if (!result.path) return;
+    config.sources[index].path = result.path;
+    if (!config.sources[index].name) config.sources[index].name = result.name;
+    config.sources[index].enabled = true;
+    renderSources();
+    changed();
+  } catch (error) {
+    byId('config-message').textContent = error.message;
+  }
+}
+
+async function browseTemporary() {
+  try {
+    const result = await api('/api/browse-folder', {
+      method: 'POST',
+      body: JSON.stringify({initial: byId('temporary_folder').value})
+    });
+    if (result.path) {
+      byId('temporary_folder').value = result.path;
+      changed();
+    }
+  } catch (error) {
+    byId('config-message').textContent = error.message;
+  }
+}
+
+function readForm() {
+  config.auto_save = byId('auto_save').checked;
+  config.temporary_folder = byId('temporary_folder').value;
+  config.run_label = byId('run_label').value;
+  Object.assign(config.selection, {
+    start: byId('start').value,
+    end: byId('end').value,
+    start_time: byId('start_time').value,
+    end_time: byId('end_time').value,
+    tagged_mode: byId('tagged_mode').value,
+    include_tags: lines('include_tags'),
+    exclude_tags: lines('exclude_tags'),
+    missing_gps: byId('missing_gps').value
+  });
+  config.gps_repair.maximum_time_difference_seconds = Number(byId('gps_threshold').value);
+  Object.assign(config.matching, {
+    street_art_cities_enabled: byId('sac_enabled').checked,
+    city: byId('city').value.trim(),
+    visual_enabled: byId('visual_enabled').checked,
+    profile: byId('profile').value
+  });
+  return config;
+}
+
+function writeForm() {
+  byId('auto_save').checked = config.auto_save !== false;
+  byId('temporary_folder').value = config.temporary_folder || '_tmp_photos';
+  byId('run_label').value = config.run_label || '';
+  for (const key of ['start','end','start_time','end_time','tagged_mode','missing_gps']) {
+    byId(key).value = config.selection[key] || '';
+  }
+  byId('include_tags').value = (config.selection.include_tags || []).join('\n');
+  byId('exclude_tags').value = (config.selection.exclude_tags || []).join('\n');
+  byId('gps_threshold').value = config.gps_repair.maximum_time_difference_seconds || 300;
+  byId('sac_enabled').checked = !!config.matching.street_art_cities_enabled;
+  byId('city').value = config.matching.city || '';
+  byId('visual_enabled').checked = !!config.matching.visual_enabled;
+  byId('profile').value = config.matching.profile || 'balanced';
+}
+
+function invalidate() {
+  previewToken = null;
+  gpsPlanId = null;
+  byId('run-button').disabled = true;
+  byId('gps-preview-button').disabled = true;
+  byId('gps-apply-button').disabled = true;
+  byId('gps-result').innerHTML = '';
+}
+
+function changed() {
+  readForm();
+  invalidate();
+  scheduleAutosave();
+}
+
+function scheduleAutosave() {
+  clearTimeout(autosaveTimer);
+  if (byId('auto_save').checked) {
+    autosaveTimer = setTimeout(() => saveConfiguration(true), 500);
+  }
+}
+
+async function saveConfiguration(quiet) {
+  readForm();
+  try {
+    await api('/api/config', {method: 'POST', body: JSON.stringify(config)});
+    byId('config-message').textContent = quiet ? 'Auto-saved.' : 'Configuration saved.';
+  } catch (error) {
+    byId('config-message').textContent = `Not saved: ${error.message}`;
+  }
+}
+
+async function openLocal(target) {
+  try {
+    await api('/api/open-local', {method: 'POST', body: JSON.stringify({target})});
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function previewSelection() {
+  readForm();
+  byId('preview-message').textContent = 'Scanning metadata…';
+  try {
+    const result = await api('/api/preview', {method: 'POST', body: JSON.stringify(config)});
+    const preview = result.preview;
+    previewToken = result.token;
+    gpsPlanId = null;
+    byId('run-button').disabled = preview.selected === 0;
+    byId('gps-preview-button').disabled = preview.missing_gps === 0 || {{ config.read_only|tojson }};
+    byId('gps-apply-button').disabled = true;
+    byId('preview-result').innerHTML = `<p><strong>${preview.selected} selected</strong> of ${preview.scanned} scanned · ${preview.tagged} tagged · ${preview.untagged} untagged · ${preview.missing_gps} without GPS</p>
+      <p class="muted">${escapeHtml(preview.first_capture || 'no capture time')} to ${escapeHtml(preview.last_capture || '—')}</p>`;
+    byId('preview-message').textContent = 'Preview complete.';
+  } catch (error) {
+    invalidate();
+    byId('preview-message').textContent = error.message;
+  }
+}
+
+async function previewGps() {
+  if (!previewToken) return;
+  readForm();
+  const targets = config.sources.filter(source => source.enabled !== false && source.gps_target).map(source => source.name);
+  const references = config.sources.filter(source => source.enabled !== false && source.gps_reference).map(source => source.name);
+  byId('gps-message').textContent = 'Building exact repair plan…';
+  try {
+    const result = await api('/api/gps/preview', {
+      method: 'POST',
+      body: JSON.stringify({config, preview_token: previewToken, target_sources: targets, reference_sources: references})
+    });
+    gpsPlanId = result.plan.id;
+    const repairable = result.plan.items.filter(item => item.status === 'repairable').length;
+    byId('gps-apply-button').disabled = repairable === 0;
+    const rows = result.plan.items.map(item => `<tr>
+      <td>${escapeHtml(item.target)}</td>
+      <td>${escapeHtml(item.status)}</td>
+      <td>${escapeHtml(item.reference || '—')}</td>
+      <td>${item.time_difference_seconds == null ? '—' : `${item.time_difference_seconds} s`}</td>
+    </tr>`).join('');
+    byId('gps-result').innerHTML = `<p><strong>${repairable} repairable</strong> of ${result.plan.items.length} missing-GPS target(s).</p>
+      <details open><summary>Exact repair plan</summary><table><thead><tr><th>Target</th><th>Status</th><th>Reference</th><th>Time difference</th></tr></thead><tbody>${rows}</tbody></table></details>`;
+    byId('gps-message').textContent = 'Preview complete; no files changed.';
+  } catch (error) {
+    byId('gps-message').textContent = error.message;
+  }
+}
+
+async function applyGps() {
+  if (!gpsPlanId || !confirm('Apply the exact previewed GPS repairs?')) return;
+  try {
+    const result = await api(`/api/plans/${encodeURIComponent(gpsPlanId)}/apply`, {method: 'POST', body: '{}'});
+    byId('gps-message').textContent = `${result.changed} photo(s) updated. Preview the selection again.`;
+    invalidate();
+  } catch (error) {
+    byId('gps-message').textContent = error.message;
+  }
+}
+
+async function startRun() {
+  if (!previewToken) return;
+  readForm();
+  byId('run-button').disabled = true;
+  byId('run-message').textContent = 'Starting…';
+  try {
+    const result = await api('/api/runs', {
+      method: 'POST',
+      body: JSON.stringify({config, preview_token: previewToken})
+    });
+    currentRun = result.run.id;
+    pollRun();
+  } catch (error) {
+    byId('run-message').textContent = error.message;
+  }
+}
+
+async function pollRun() {
+  if (!currentRun) return;
+  try {
+    const result = await api(`/api/runs/${encodeURIComponent(currentRun)}`);
+    const run = result.run;
+    byId('run-message').innerHTML = run.status === 'complete'
+      ? `Complete. <a href="/runs/${encodeURIComponent(run.id)}">Open report</a>`
+      : `${escapeHtml(run.status)} — ${escapeHtml(run.stage)}`;
+    byId('run-log').hidden = !run.log;
+    byId('run-log').textContent = run.log || '';
+    if (['queued','running'].includes(run.status)) setTimeout(pollRun, 1000);
+  } catch (error) {
+    byId('run-message').textContent = error.message;
+  }
+}
+
+async function cancelRun(id) {
+  await api(`/api/runs/${encodeURIComponent(id)}/cancel`, {method: 'POST', body: '{}'});
+  location.reload();
+}
+
+async function deleteRun(id) {
+  if (!confirm(`Delete run ${id} and all its local outputs?`)) return;
+  await api(`/api/runs/${encodeURIComponent(id)}`, {method: 'DELETE'});
+  location.reload();
+}
+
+document.querySelectorAll('input,select,textarea').forEach(element => {
+  if (!['auto_save'].includes(element.id)) element.addEventListener('input', changed);
+});
+byId('auto_save').addEventListener('change', () => saveConfiguration(false));
+writeForm();
+renderSources();
+</script>
 </body>
 </html>
-

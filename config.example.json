@@ -11,6 +11,7 @@
     }
   ],
   "temporary_folder": "_tmp_photos",
+  "run_label": "",
   "selection": {
     "start": "",
     "end": "",
@@ -37,6 +38,7 @@
   "matching": {
     "street_art_cities_enabled": false,
     "city": "",
+    "visual_enabled": false,
     "profile": "balanced",
     "candidate_radius_m": 80
   },
@@ -46,4 +48,3 @@
   },
   "read_only": false
 }
-

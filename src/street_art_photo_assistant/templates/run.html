@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ manifest.label or manifest.id }} — Street Art Photo Assistant</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+<main>
+  <header class="page-header">
+    <div>
+      <a href="{{ url_for('index') }}">← Generate</a>
+      <h1>{{ manifest.label or 'Cluster report' }}</h1>
+      <p>{{ clusters|length }} cluster(s) · {{ manifest.selected_photos }} selected photo(s)</p>
+    </div>
+  </header>
+  <div class="cluster-grid">
+  {% for cluster in clusters %}
+    <article class="card cluster-card">
+      <a href="{{ url_for('cluster_review', run_id=manifest.id, cluster_id=cluster.id) }}">
+        {% set first = (cluster.photos + cluster.context_photos)|first %}
+        {% if first %}<img src="{{ url_for('photo', path=first.path) }}" alt="Cluster thumbnail">{% endif %}
+        <h2>{{ cluster.tag }}</h2>
+      </a>
+      <p>{{ cluster.photos|length }} primary · {{ cluster.context_photos|length }} context</p>
+      <p class="muted">{% if cluster.latitude is not none %}{{ '%.6f'|format(cluster.latitude) }}, {{ '%.6f'|format(cluster.longitude) }}{% else %}No GPS{% endif %}</p>
+    </article>
+  {% endfor %}
+  </div>
+</main>
+</body>
+</html>
+

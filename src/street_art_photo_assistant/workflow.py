@@ -40,16 +40,13 @@ def _atomic_json(path: Path, payload: object) -> None:
     os.replace(temporary, path)
 
 
-def run_offline_clustering(
+def sources_from_config(
     config: dict[str, Any],
-    *,
     config_root: Path,
-    output_directory: Path,
-    visual: bool = False,
-) -> dict[str, Any]:
-    """Run the complete network-free preview and clustering workflow."""
+) -> list[PhotoSource]:
+    """Resolve configured source paths against the configuration directory."""
 
-    sources = [
+    return [
         PhotoSource(
             name=str(item["name"]),
             path=_resolve(config_root, item["path"]),
@@ -59,8 +56,13 @@ def run_offline_clustering(
         )
         for item in config["sources"]
     ]
+
+
+def selection_from_config(config: dict[str, Any]) -> SelectionCriteria:
+    """Build typed selection criteria from the JSON contract."""
+
     selection = config["selection"]
-    criteria = SelectionCriteria(
+    return SelectionCriteria(
         start=_optional_date(selection.get("start")),
         end=_optional_date(selection.get("end")),
         start_time=_optional_time(selection.get("start_time")),
@@ -70,8 +72,31 @@ def run_offline_clustering(
         exclude_tags=tuple(selection.get("exclude_tags") or []),
         missing_gps=str(selection["missing_gps"]),
     )
-    scanned = scan_sources(sources)
-    selected, preview = select_photos(scanned, criteria)
+
+
+def scan_and_select(
+    config: dict[str, Any],
+    config_root: Path,
+) -> tuple[list, list, object]:
+    """Scan configured sources and apply the exact configured selection."""
+
+    scanned = scan_sources(sources_from_config(config, config_root))
+    selected, preview = select_photos(
+        scanned, selection_from_config(config)
+    )
+    return scanned, selected, preview
+
+
+def run_offline_clustering(
+    config: dict[str, Any],
+    *,
+    config_root: Path,
+    output_directory: Path,
+    visual: bool = False,
+) -> dict[str, Any]:
+    """Run the complete network-free preview and clustering workflow."""
+
+    _scanned, selected, preview = scan_and_select(config, config_root)
     clustering = config["clustering"]
     clusters = cluster_photos(
         selected,
@@ -97,4 +122,3 @@ def run_offline_clustering(
         "clusters": len(clusters),
         "output_directory": str(output_directory.resolve()),
     }
-

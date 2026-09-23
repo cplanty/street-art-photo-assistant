@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ cluster.tag }} — Street Art Photo Assistant</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+<main>
+  <header class="page-header">
+    <div>
+      <a href="{{ url_for('run_review', run_id=run_id) }}">← All clusters</a>
+      <h1>{{ cluster.tag }}</h1>
+      <p><code>{{ cluster.id }}</code></p>
+    </div>
+    <a class="button" href="{{ url_for('next_cluster', run_id=run_id, cluster_id=cluster.id) }}">Next →</a>
+  </header>
+
+  <section class="card">
+    <h2>GPS positions</h2>
+    <svg id="gps-plot" class="gps-plot" viewBox="0 0 600 220" role="img" aria-label="Relative photo positions"></svg>
+    <div class="form-row">
+      <label>Latitude <input id="latitude" type="number" step="any" value="{{ cluster.latitude if cluster.latitude is not none else '' }}"></label>
+      <label>Longitude <input id="longitude" type="number" step="any" value="{{ cluster.longitude if cluster.longitude is not none else '' }}"></label>
+      <button type="button" onclick="previewGpsMove()" {% if read_only %}disabled{% endif %}>Preview position</button>
+    </div>
+    <p id="gps-message" class="muted"></p>
+  </section>
+
+  <section class="card">
+    <h2>Tag editing</h2>
+    <div class="form-row">
+      <label>Add <input id="add-tag"></label>
+      <label>Remove <input id="remove-tag"></label>
+      <button type="button" onclick="previewTags()" {% if read_only %}disabled{% endif %}>Preview tag changes</button>
+    </div>
+    <p id="tag-message" class="muted"></p>
+  </section>
+
+  <section class="card">
+    <h2>Your photos</h2>
+    <div class="photo-grid">
+    {% for photo in cluster.photos %}
+      <figure>
+        <label class="check"><input class="gps-photo" type="checkbox" value="{{ photo.path }}" checked> Apply cluster position</label>
+        <img src="{{ url_for('photo', path=photo.path) }}" alt="{{ photo.path|e }}">
+        <figcaption>{{ photo.path }}<br>{{ photo.tags|join(', ') or 'no tags' }}</figcaption>
+      </figure>
+    {% endfor %}
+    {% for photo in cluster.context_photos %}
+      <figure class="context">
+        <label class="check"><input class="gps-photo" type="checkbox" value="{{ photo.path }}"> Context photo</label>
+        <img src="{{ url_for('photo', path=photo.path) }}" alt="{{ photo.path|e }}">
+        <figcaption>{{ photo.path }}<br>{{ photo.tags|join(', ') or 'no tags' }}</figcaption>
+      </figure>
+    {% endfor %}
+    </div>
+  </section>
+</main>
+<script>
+const runId = {{ run_id|tojson }};
+const clusterId = {{ cluster.id|tojson }};
+const cluster = {{ cluster|tojson }};
+let pendingPlan = null;
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[char]));
+
+async function api(url, body) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body || {})
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+  return payload;
+}
+
+function drawGps() {
+  const photos = [...cluster.photos, ...cluster.context_photos].filter(photo => photo.latitude != null && photo.longitude != null);
+  const svg = document.getElementById('gps-plot');
+  if (!photos.length) {
+    svg.innerHTML = '<text x="300" y="110" text-anchor="middle">No photo GPS to plot</text>';
+    return;
+  }
+  const lats = photos.map(photo => photo.latitude);
+  const lons = photos.map(photo => photo.longitude);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+  svg.innerHTML = photos.map((photo, index) => {
+    const x = 30 + 540 * ((photo.longitude - minLon) / (maxLon - minLon || 1));
+    const y = 190 - 160 * ((photo.latitude - minLat) / (maxLat - minLat || 1));
+    return `<circle cx="${x}" cy="${y}" r="7"><title>${photo.path}</title></circle><text x="${x + 10}" y="${y + 4}">${index + 1}</text>`;
+  }).join('');
+}
+
+async function applyPending(messageId) {
+  if (!pendingPlan || !confirm(`Apply this exact preview to ${pendingPlan.items.length} photo(s)?`)) return;
+  try {
+    const result = await api(`/api/plans/${encodeURIComponent(pendingPlan.id)}/apply`);
+    document.getElementById(messageId).textContent = `${result.changed} photo(s) updated. Reloading…`;
+    setTimeout(() => location.reload(), 500);
+  } catch (error) {
+    document.getElementById(messageId).textContent = error.message;
+  }
+}
+
+async function previewTags() {
+  const add = document.getElementById('add-tag').value.trim();
+  const remove = document.getElementById('remove-tag').value.trim();
+  const message = document.getElementById('tag-message');
+  try {
+    const result = await api(`/api/runs/${encodeURIComponent(runId)}/clusters/${encodeURIComponent(clusterId)}/tags/preview`, {
+      add: add ? [add] : [], remove: remove ? [remove] : []
+    });
+    pendingPlan = result.plan;
+    const changed = pendingPlan.items.filter(item => item.changed).length;
+    const rows = pendingPlan.items.filter(item => item.changed).map(item =>
+      `<li><code>${escapeHtml(item.path)}</code><br>${escapeHtml(item.before.join(', ') || 'no tags')} → ${escapeHtml(item.after.join(', ') || 'no tags')}</li>`
+    ).join('');
+    message.innerHTML = `${changed} photo(s) would change.<ul>${rows}</ul><button onclick="applyPending('tag-message')">Apply preview</button>`;
+  } catch (error) {
+    message.textContent = error.message;
+  }
+}
+
+async function previewGpsMove() {
+  const message = document.getElementById('gps-message');
+  const paths = [...document.querySelectorAll('.gps-photo:checked')].map(item => item.value);
+  try {
+    const result = await api(`/api/runs/${encodeURIComponent(runId)}/clusters/${encodeURIComponent(clusterId)}/gps/preview`, {
+      latitude: Number(document.getElementById('latitude').value),
+      longitude: Number(document.getElementById('longitude').value),
+      paths
+    });
+    pendingPlan = result.plan;
+    const rows = pendingPlan.items.map(item =>
+      `<li><code>${escapeHtml(item.path)}</code>: ${escapeHtml(item.before.latitude ?? 'no GPS')}, ${escapeHtml(item.before.longitude ?? 'no GPS')} → ${escapeHtml(item.after.latitude)}, ${escapeHtml(item.after.longitude)}</li>`
+    ).join('');
+    message.innerHTML = `${pendingPlan.items.length} photo(s) would move.<ul>${rows}</ul><button onclick="applyPending('gps-message')">Apply preview</button>`;
+  } catch (error) {
+    message.textContent = error.message;
+  }
+}
+
+drawGps();
+</script>
+</body>
+</html>

@@ -3,10 +3,18 @@
 Copy `config.example.json` to `config.local.json`. Relative paths resolve from
 the repository directory.
 
+The browser autosaves the complete form by default. Disable **Auto save config**
+for a temporary experiment, use **Save configuration now** explicitly, or open
+the JSON from the Configuration card and reload the page after editing.
+
 ## Sources
 
 Each source has a display name, local path, enabled flag, and optional GPS
 target/reference roles. One source may have both GPS roles.
+
+`temporary_folder` controls review copies. `paths.runs` controls persistent
+manifests, reports, logs, and edit plans. `read_only` disables all metadata
+apply endpoints while keeping preview and reports available.
 
 ## Tag policy
 
@@ -31,4 +39,3 @@ target/reference roles. One source may have both GPS roles.
 Another comparison provider should consume normalized `PhotoCluster` records
 and return evidence records. It must not change selection, clustering, or photo
 metadata.
-

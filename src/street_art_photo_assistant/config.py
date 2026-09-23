@@ -14,6 +14,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "auto_save": True,
     "sources": [],
     "temporary_folder": "_tmp_photos",
+    "run_label": "",
     "selection": {
         "start": "",
         "end": "",
@@ -35,6 +36,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "matching": {
         "street_art_cities_enabled": False,
         "city": "",
+        "visual_enabled": False,
         "profile": "balanced",
         "candidate_radius_m": 80,
     },
@@ -60,13 +62,20 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("Unsupported configuration version")
     if not isinstance(config.get("sources"), list):
         raise ValueError("sources must be a list")
+    source_names: set[str] = set()
     for index, source in enumerate(config["sources"]):
         if not isinstance(source, dict):
             raise ValueError(f"sources[{index}] must be an object")
+        if source.get("enabled", True) is False:
+            continue
         if not str(source.get("name") or "").strip():
             raise ValueError(f"sources[{index}].name is required")
         if not str(source.get("path") or "").strip():
             raise ValueError(f"sources[{index}].path is required")
+        name = str(source["name"]).strip().casefold()
+        if name in source_names:
+            raise ValueError(f"sources[{index}].name is duplicated")
+        source_names.add(name)
     selection = config.get("selection", {})
     if selection.get("tagged_mode") not in {"both", "tagged", "untagged"}:
         raise ValueError("selection.tagged_mode is invalid")
@@ -78,6 +87,10 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError(
             "gps_repair.maximum_time_difference_seconds must be positive"
         )
+    if config["matching"]["profile"] not in {
+        "quick", "balanced", "thorough"
+    }:
+        raise ValueError("matching.profile is invalid")
 
 
 def load_config(path: Path) -> dict[str, Any]:
@@ -112,4 +125,3 @@ def resolve_local_path(project_root: Path, value: str) -> Path:
 
     path = Path(value).expanduser()
     return path.resolve() if path.is_absolute() else (project_root / path).resolve()
-

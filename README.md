@@ -17,13 +17,15 @@ affiliated with or endorsed by Street Art Cities.
 - Preview and atomically apply flat tag edits with stale-plan rejection.
 - Repair missing GPS from same-camera or trusted cross-camera references.
 - Preview explicit manual GPS positioning and log every metadata change.
+- Generate cancellable persistent runs and review clusters in the browser.
+- Inspect exact tag/GPS plans before applying them from cluster detail pages.
 - Keep all configuration, reports, and cached data on the local computer.
 - Use explicit typed data contracts for photos, clusters, repair plans, and
   runs.
 - Start one local web application with no account or cloud service.
 
-Review pages, persistent runs, and optional Street Art Cities matching are
-implemented in subsequent focused commits.
+Optional Street Art Cities matching is implemented in a subsequent focused
+commit. Every other core workflow remains fully offline.
 
 ## Install
 
@@ -66,6 +68,7 @@ or other local data.
 - [Architecture](docs/architecture.md)
 - [Customization](docs/customization.md)
 - [Data formats](docs/data-formats.md)
+- [Workflows](docs/workflows.md)
 - [Development](docs/development.md)
 
 ## License

@@ -27,8 +27,10 @@ local folders
 - `workflow.py` composes the network-free scan, preview, cluster, and report
   pipeline used by both the CLI and web layer.
 - `sac.py` will be the only Street Art Cities network boundary.
-- `runs.py` will persist manifests, progress, reports, and safe deletion.
-- `web.py` owns local routes and renders templates.
+- `runs.py` launches package subcommands without a shell and persists
+  cancellable run manifests, logs, reports, summaries, and safe deletion.
+- `web.py` owns local routes, selection tokens, persisted edit plans, path
+  boundaries, and templates.
 
 The core modules do not import `sac.py`. The web/run layer invokes the adapter
 only for an explicitly enabled target.

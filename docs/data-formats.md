@@ -39,6 +39,9 @@ difference.
 
 ## Run manifest and change log
 
-Run manifests contain request, state, selected count, cluster count, and output
-paths. Change logs contain operation, time, file, before value, and after value.
+Run manifests contain command, state, stage, label, selected count, cluster
+count, and output paths. Change logs contain operation, plan ID, status, time,
+file, before value, and after value. `status: applying` means earlier listed
+writes completed before a later interruption; `status: complete` means the
+entire plan finished.
 
