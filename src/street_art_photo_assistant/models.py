@@ -59,6 +59,11 @@ class PhotoCluster:
     visual_group: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        capture_times = sorted(
+            photo.captured_at
+            for photo in [*self.photos, *self.context_photos]
+            if photo.captured_at is not None
+        )
         return {
             "id": self.id,
             "tag": self.tag,
@@ -69,6 +74,12 @@ class PhotoCluster:
             "latitude": self.latitude,
             "longitude": self.longitude,
             "visual_group": self.visual_group,
+            "first_capture": (
+                capture_times[0].isoformat() if capture_times else None
+            ),
+            "last_capture": (
+                capture_times[-1].isoformat() if capture_times else None
+            ),
         }
 
 
@@ -118,4 +129,3 @@ class RunManifest:
     selected_photos: int = 0
     clusters: int = 0
     outputs: dict[str, str] = field(default_factory=dict)
-

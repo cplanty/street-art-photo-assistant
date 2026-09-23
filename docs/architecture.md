@@ -23,6 +23,8 @@ local folders
 - `metadata.py` will own previewed tag/GPS writes and change logs.
 - `gps.py` will create and validate deterministic repair plans.
 - `matching.py` will contain optional local OpenCV comparisons.
+- `workflow.py` composes the network-free scan, preview, cluster, and report
+  pipeline used by both the CLI and web layer.
 - `sac.py` will be the only Street Art Cities network boundary.
 - `runs.py` will persist manifests, progress, reports, and safe deletion.
 - `web.py` owns local routes and renders templates.
@@ -36,4 +38,3 @@ Read operations return normalized immutable photo records. Write operations
 accept a persisted plan containing file fingerprints and exact targets. They
 preflight the complete plan before changing the first file and append a JSON
 change log for every successful write.
-

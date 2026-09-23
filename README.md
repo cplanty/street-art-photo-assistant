@@ -9,13 +9,18 @@ affiliated with or endorsed by Street Art Cities.
 ## Current capabilities
 
 - Configure reusable local photo folders.
+- Read JPEG capture time, GPS, and flat IPTC/Windows keywords.
+- Preview date/time, tag, tagged-state, and missing-GPS filters.
+- Group photos by tag and location, retaining wide/multi-tag context photos.
+- Optionally split ambiguous local clusters with OpenCV.
+- Write offline JSON and Markdown cluster reports.
 - Keep all configuration, reports, and cached data on the local computer.
 - Use explicit typed data contracts for photos, clusters, repair plans, and
   runs.
 - Start one local web application with no account or cloud service.
 
-The selection, clustering, metadata editing, GPS repair, and optional Street
-Art Cities matching workflows are implemented in subsequent focused commits.
+Metadata editing, GPS repair, review pages, persistent runs, and optional
+Street Art Cities matching are implemented in subsequent focused commits.
 
 ## Install
 
@@ -29,10 +34,17 @@ python -m street_art_photo_assistant
 
 Open <http://127.0.0.1:8765/>.
 
+Create an offline cluster report directly from the configured sources:
+
+```powershell
+python -m street_art_photo_assistant cluster --output _runs\manual
+```
+
 Install local visual matching support when needed:
 
 ```powershell
 pip install -e ".[visual]"
+python -m street_art_photo_assistant cluster --visual --output _runs\manual
 ```
 
 ## Privacy and safety
@@ -56,4 +68,3 @@ or other local data.
 ## License
 
 [MIT](LICENSE)
-
