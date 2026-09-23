@@ -6,7 +6,7 @@ import hashlib
 import math
 from collections import Counter
 from dataclasses import dataclass
-from datetime import date, time
+from datetime import date, datetime, time
 from typing import Iterable
 
 from .models import PhotoCluster, PhotoRecord
@@ -75,19 +75,35 @@ def select_photos(
     exclude = _tag_set(criteria.exclude_tags)
     scanned = list(photos)
     selected: list[PhotoRecord] = []
+    start_at = (
+        datetime.combine(criteria.start, criteria.start_time or time.min)
+        if criteria.start else None
+    )
+    end_at = (
+        datetime.combine(criteria.end, criteria.end_time or time.max)
+        if criteria.end else None
+    )
 
     for photo in scanned:
         tags = _tag_set(photo.tags)
         if criteria.start or criteria.end or criteria.start_time or criteria.end_time:
             if photo.captured_at is None:
                 continue
-            if criteria.start and photo.captured_at.date() < criteria.start:
+            if start_at and photo.captured_at < start_at:
                 continue
-            if criteria.end and photo.captured_at.date() > criteria.end:
+            if end_at and photo.captured_at > end_at:
                 continue
-            if criteria.start_time and photo.captured_at.time() < criteria.start_time:
+            if (
+                not criteria.start
+                and criteria.start_time
+                and photo.captured_at.time() < criteria.start_time
+            ):
                 continue
-            if criteria.end_time and photo.captured_at.time() > criteria.end_time:
+            if (
+                not criteria.end
+                and criteria.end_time
+                and photo.captured_at.time() > criteria.end_time
+            ):
                 continue
         if criteria.tagged_mode == "tagged" and not tags:
             continue

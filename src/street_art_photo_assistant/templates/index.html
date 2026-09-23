@@ -26,10 +26,11 @@
         <div class="form-row">
           <label>Start date <input id="start" type="date"></label>
           <label>End date <input id="end" type="date"></label>
+          <button type="button" onclick="setLast24Hours()">Last 24h</button>
         </div>
         <div class="form-row">
-          <label>Start time <input id="start_time" type="time"></label>
-          <label>End time <input id="end_time" type="time"></label>
+          <label>Start time <input id="start_time" type="time" step="1"></label>
+          <label>End time <input id="end_time" type="time" step="1"></label>
         </div>
         <label>Photos without GPS
           <select id="missing_gps">
@@ -346,6 +347,31 @@ function changed() {
   readForm();
   invalidate();
   scheduleAutosave();
+}
+
+function localDateValue(value) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function localTimeValue(value) {
+  return [
+    String(value.getHours()).padStart(2, '0'),
+    String(value.getMinutes()).padStart(2, '0'),
+    String(value.getSeconds()).padStart(2, '0')
+  ].join(':');
+}
+
+function setLast24Hours() {
+  const end = new Date();
+  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+  byId('start').value = localDateValue(start);
+  byId('start_time').value = localTimeValue(start);
+  byId('end').value = localDateValue(end);
+  byId('end_time').value = localTimeValue(end);
+  changed();
 }
 
 function scheduleAutosave() {

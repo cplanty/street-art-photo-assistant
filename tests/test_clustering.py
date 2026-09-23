@@ -1,6 +1,6 @@
 import tempfile
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pathlib import Path
 
 from street_art_photo_assistant.clustering import (
@@ -53,6 +53,41 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(["keep.jpg"], [p.path.name for p in selected])
         self.assertEqual(4, preview.scanned)
         self.assertEqual(1, preview.selected)
+
+    def test_date_times_form_one_range_across_midnight(self):
+        photos = [
+            photo("before.jpg", captured_at=datetime(2026, 1, 1, 11, 59)),
+            photo("start.jpg", captured_at=datetime(2026, 1, 1, 12, 0)),
+            photo("overnight.jpg", captured_at=datetime(2026, 1, 2, 2, 0)),
+            photo("end.jpg", captured_at=datetime(2026, 1, 2, 12, 0)),
+            photo("after.jpg", captured_at=datetime(2026, 1, 2, 12, 1)),
+        ]
+
+        selected, _preview = select_photos(
+            photos,
+            SelectionCriteria(
+                start=date(2026, 1, 1),
+                start_time=time(12, 0),
+                end=date(2026, 1, 2),
+                end_time=time(12, 0),
+            ),
+        )
+
+        self.assertEqual(
+            ["start.jpg", "overnight.jpg", "end.jpg"],
+            [item.path.name for item in selected],
+        )
+
+    def test_times_without_dates_remain_a_daily_window(self):
+        selected, _preview = select_photos(
+            [
+                photo("morning.jpg", captured_at=datetime(2026, 1, 1, 9, 0)),
+                photo("afternoon.jpg", captured_at=datetime(2026, 1, 2, 14, 0)),
+            ],
+            SelectionCriteria(start_time=time(8, 0), end_time=time(12, 0)),
+        )
+
+        self.assertEqual(["morning.jpg"], [item.path.name for item in selected])
 
 
 class ClusteringTests(unittest.TestCase):
@@ -113,4 +148,3 @@ class ClusteringTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
