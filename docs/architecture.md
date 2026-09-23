@@ -40,8 +40,8 @@ The workflow imports `sac.py` lazily only for an explicitly enabled target.
 Matching-disabled runs make no Street Art Cities requests.
 
 Leaflet 1.9.4 is bundled under its BSD-2-Clause license for local GPS display.
-Offline reports default to a generated coordinate grid. Optional
-OpenStreetMap tiles are presentation only and do not enter the matching
+Offline reports default to a generated coordinate grid. Optional network
+base-map tiles are presentation only and do not enter the matching
 pipeline.
 
 ## Write boundary

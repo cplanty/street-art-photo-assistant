@@ -105,24 +105,33 @@
     <div class="detail-column">
       <section class="card gps-map-card">
         <h2>GPS position utility</h2>
-        <p class="muted">Blue points are primary photos, grey points are context images, and green points are Street Art Cities markers. Drag the red target to move all cluster images together. Click a photo point to see its thumbnail and select it, then drag it for an individual correction.</p>
+        <p class="muted">Drag the red target to move all cluster images together. Click a photo point to see its thumbnail and select it, then drag it for an individual correction.</p>
         <div id="gps-map"></div>
-        <div class="form-row">
-          <label>Map background
+        <div class="gps-controls">
+          <label class="gps-legend">Base map
             <select id="gps-basemap">
               <option value="offline">Offline coordinate grid</option>
-              <option value="osm">OpenStreetMap (network)</option>
+              <option value="osm">Map (OpenStreetMap)</option>
+              <option value="satellite">Satellite (Esri)</option>
+              <option value="hybrid">Satellite + labels</option>
+              <option value="topo">Topographic (OpenTopoMap)</option>
+              <option value="light">Light (CARTO)</option>
             </select>
           </label>
-          <span>Latitude <strong id="latitude">{{ '%.7f'|format(cluster.latitude) if cluster.latitude is not none else '—' }}</strong></span>
-          <span>Longitude <strong id="longitude">{{ '%.7f'|format(cluster.longitude) if cluster.longitude is not none else '—' }}</strong></span>
-          <button id="gps-apply-all" type="button" onclick="applyGlobalGps()" disabled>Apply to all</button>
-          <button type="button" onclick="resetGpsTarget()">Reset target</button>
+          <span class="gps-legend"><i style="background:#1a7f37"></i>site marker</span>
+          <span class="gps-legend"><i style="background:#0969da"></i>your photos</span>
+          <span class="gps-legend"><i style="background:#8b949e"></i>context</span>
+          <span class="gps-legend"><i style="background:#cf222e"></i>target</span>
+          <span id="gps-readout" class="gps-readout">{% if cluster.latitude is not none and cluster.longitude is not none %}{{ '%.6f, %.6f'|format(cluster.latitude, cluster.longitude) }}{% else %}—{% endif %}</span>
+          <div class="gps-all-actions">
+            <button id="gps-apply-all" type="button" onclick="applyGlobalGps()" disabled>Apply to all</button>
+            <button type="button" onclick="resetAllGps()">Reset all</button>
+          </div>
         </div>
-        <div id="individual-gps-controls" class="button-row" hidden>
+        <div id="individual-gps-controls" class="gps-move-actions" hidden>
           <strong id="individual-gps-count"></strong>
           <button class="gps-apply-ready" type="button" onclick="applyIndividualGpsMoves()" {% if read_only %}disabled{% endif %}>Apply</button>
-          <button type="button" onclick="cancelIndividualGpsMoves()">Cancel individual moves</button>
+          <button type="button" onclick="cancelIndividualGpsMoves()">Cancel</button>
         </div>
         <div id="gps-plan" class="plan-preview"></div>
       </section>
@@ -264,8 +273,7 @@ function mapPoint(photo, kind) {
 }
 
 function updateTargetFields(lat, lon) {
-  document.getElementById('latitude').textContent = lat.toFixed(7);
-  document.getElementById('longitude').textContent = lon.toFixed(7);
+  document.getElementById('gps-readout').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
 }
 
 function initGpsMap() {
@@ -292,16 +300,58 @@ function initGpsMap() {
       return tile;
     }
   });
+  const baseMaps = {
+    osm: {
+      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      maxNativeZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    },
+    satellite: {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      maxNativeZoom: 19,
+      attribution: 'Tiles &copy; Esri'
+    },
+    hybrid: {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      overlay: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+      maxNativeZoom: 19,
+      attribution: 'Tiles &copy; Esri'
+    },
+    topo: {
+      url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+      maxNativeZoom: 17,
+      attribution: '&copy; OpenTopoMap contributors'
+    },
+    light: {
+      url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+      maxNativeZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors, &copy; CARTO'
+    }
+  };
   let baseLayer = null;
   function setBasemap(name) {
     if (baseLayer) gpsMap.removeLayer(baseLayer);
-    baseLayer = name === 'osm'
-      ? L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const specification = baseMaps[name];
+    if (!specification) {
+      baseLayer = new OfflineGrid({attribution: 'Offline coordinate grid'});
+    } else {
+      const layers = [
+        L.tileLayer(specification.url, {
           maxZoom: 20,
-          maxNativeZoom: 19,
-          attribution: '&copy; OpenStreetMap contributors'
+          maxNativeZoom: specification.maxNativeZoom,
+          keepBuffer: 4,
+          attribution: specification.attribution
         })
-      : new OfflineGrid({attribution: 'Offline coordinate grid'});
+      ];
+      if (specification.overlay) {
+        layers.push(L.tileLayer(specification.overlay, {
+          maxZoom: 20,
+          maxNativeZoom: specification.maxNativeZoom,
+          keepBuffer: 4
+        }));
+      }
+      baseLayer = L.layerGroup(layers);
+    }
     baseLayer.addTo(gpsMap);
     localStorage.setItem('sapa-gps-basemap', name);
   }
@@ -454,6 +504,12 @@ function resetGpsTarget() {
   updateGlobalGpsControls();
 }
 
+function resetAllGps() {
+  resetGpsTarget();
+  cancelIndividualGpsMoves(false);
+  document.getElementById('gps-plan').textContent = 'GPS positions reset.';
+}
+
 function updateGlobalGpsControls() {
   const button = document.getElementById('gps-apply-all');
   if (!gpsTarget || readOnly) {
@@ -514,10 +570,10 @@ function updateIndividualGpsControls() {
   const controls = document.getElementById('individual-gps-controls');
   controls.hidden = moved.length === 0;
   document.getElementById('individual-gps-count').textContent =
-    `${moved.length} individual image move(s) pending`;
+    `${moved.length} marker${moved.length === 1 ? '' : 's'} moved (not saved yet)`;
 }
 
-function cancelIndividualGpsMoves() {
+function cancelIndividualGpsMoves(showMessage = true) {
   movedPhotoMarkers().forEach(entry => {
     entry.point.lat = entry.original[0];
     entry.point.lon = entry.original[1];
@@ -527,7 +583,9 @@ function cancelIndividualGpsMoves() {
   });
   selectPhotoMarker(null);
   updateIndividualGpsControls();
-  document.getElementById('gps-plan').textContent = 'Individual moves cancelled.';
+  if (showMessage) {
+    document.getElementById('gps-plan').textContent = 'Individual moves cancelled.';
+  }
 }
 
 async function applyIndividualGpsMoves() {

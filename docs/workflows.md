@@ -76,8 +76,9 @@ confirmation, and only then write. Multiple independently moved points retain
 distinct destination coordinates.
 
 The bundled Leaflet map starts with an offline coordinate grid when Street Art
-Cities matching is disabled. **OpenStreetMap (network)** can be selected as
-display context; its tiles are never used as proposal or matching evidence.
+Cities matching is disabled. OpenStreetMap, Esri satellite, OpenTopoMap, and
+CARTO base maps can be selected as network display context; their tiles are
+never used as proposal or matching evidence.
 
 ## Runs
 

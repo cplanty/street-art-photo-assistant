@@ -71,8 +71,8 @@ python -m street_art_photo_assistant cluster --visual --output _runs\manual
 
 The core workflow is local and has no telemetry. Provider access is used only
 when Street Art Cities matching is enabled. An offline report's GPS map can
-optionally request OpenStreetMap display tiles when the user selects that
-background; tiles are never matching evidence. Photo metadata writes require
+optionally request third-party display tiles when the user selects a network
+base map; tiles are never matching evidence. Photo metadata writes require
 an exact preview and confirmation, preserve unrelated metadata, and create a
 JSON change log.
 
