@@ -14,13 +14,16 @@ affiliated with or endorsed by Street Art Cities.
 - Group photos by tag and location, retaining wide/multi-tag context photos.
 - Optionally split ambiguous local clusters with OpenCV.
 - Write offline JSON and Markdown cluster reports.
+- Preview and atomically apply flat tag edits with stale-plan rejection.
+- Repair missing GPS from same-camera or trusted cross-camera references.
+- Preview explicit manual GPS positioning and log every metadata change.
 - Keep all configuration, reports, and cached data on the local computer.
 - Use explicit typed data contracts for photos, clusters, repair plans, and
   runs.
 - Start one local web application with no account or cloud service.
 
-Metadata editing, GPS repair, review pages, persistent runs, and optional
-Street Art Cities matching are implemented in subsequent focused commits.
+Review pages, persistent runs, and optional Street Art Cities matching are
+implemented in subsequent focused commits.
 
 ## Install
 

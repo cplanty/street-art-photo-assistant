@@ -20,8 +20,9 @@ local folders
   contracts.
 - `photos.py` will discover photos and normalize metadata.
 - `clustering.py` will select and group normalized records.
-- `metadata.py` will own previewed tag/GPS writes and change logs.
-- `gps.py` will create and validate deterministic repair plans.
+- `metadata.py` owns previewed atomic flat-keyword writes.
+- `gps.py` creates and validates deterministic missing/manual GPS plans.
+- `change_log.py` atomically records each applied metadata operation.
 - `matching.py` will contain optional local OpenCV comparisons.
 - `workflow.py` composes the network-free scan, preview, cluster, and report
   pipeline used by both the CLI and web layer.

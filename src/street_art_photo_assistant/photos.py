@@ -67,6 +67,18 @@ def _read_iptc_keywords(path: Path) -> list[str]:
     return [_decode_text(value) for value in raw if _decode_text(value)]
 
 
+def read_keywords(path: Path) -> tuple[str, ...]:
+    """Merge flat IPTC and Windows keywords while preserving order."""
+
+    with Image.open(path) as image:
+        keywords = decode_xpkeywords(image.getexif().get(0x9C9E))
+    try:
+        keywords = [*_read_iptc_keywords(path), *keywords]
+    except (OSError, TypeError, ValueError):
+        pass
+    return tuple(dict.fromkeys(tag for tag in keywords if tag))
+
+
 def read_photo(path: Path, source: str) -> PhotoRecord:
     """Read one JPEG into the normalized public photo contract."""
 
@@ -88,15 +100,13 @@ def read_photo(path: Path, source: str) -> PhotoRecord:
             if gps.get(2) and gps.get(4):
                 latitude = _coordinate(gps[2], gps.get(1))
                 longitude = _coordinate(gps[4], gps.get(3))
-            keywords = decode_xpkeywords(exif.get(0x9C9E))
     except (OSError, SyntaxError, TypeError, ValueError) as exc:
         raise ValueError(f"Could not read photo metadata: {path}") from exc
 
     try:
-        keywords.extend(_read_iptc_keywords(path))
-    except (OSError, TypeError, ValueError):
-        pass
-    tags = tuple(dict.fromkeys(tag for tag in keywords if tag))
+        tags = read_keywords(path)
+    except (OSError, SyntaxError, TypeError, ValueError) as exc:
+        raise ValueError(f"Could not read photo keywords: {path}") from exc
     return PhotoRecord(
         path=path.resolve(),
         source=source,
@@ -119,4 +129,3 @@ def scan_sources(sources: Iterable[PhotoSource]) -> list[PhotoRecord]:
         for path in discover_jpegs(source.path):
             records.append(read_photo(path, source.name))
     return records
-
