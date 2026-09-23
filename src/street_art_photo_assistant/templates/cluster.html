@@ -51,7 +51,7 @@
         <div class="common-tags">
           <strong>On all photos:</strong>
           {% for tag in common_tags %}
-            <span class="tag">{{ tag }}<button type="button" title="Remove from every image" onclick='previewTagChange(allPhotoPaths, [], [{{ tag|tojson }}])' {% if read_only %}disabled{% endif %}>×</button></span>
+            <span class="tag">{{ tag }}<button type="button" title="Remove from every image" onclick='applyTagChange(allPhotoPaths, [], [{{ tag|tojson }}])' {% if read_only %}disabled{% endif %}>×</button></span>
           {% else %}
             <span class="muted">no common tag</span>
           {% endfor %}
@@ -91,7 +91,7 @@
               <div class="tags">
                 <strong>Existing tags:</strong>
                 {% for tag in photo.tags %}
-                  <span class="tag">{{ tag }}<button type="button" title="Remove from this image" onclick='previewTagChange([{{ photo.path|tojson }}], [], [{{ tag|tojson }}])' {% if read_only %}disabled{% endif %}>×</button></span>
+                  <span class="tag">{{ tag }}<button type="button" title="Remove from this image" onclick='applyTagChange([{{ photo.path|tojson }}], [], [{{ tag|tojson }}])' {% if read_only %}disabled{% endif %}>×</button></span>
                 {% else %}
                   <span class="muted">none</span>
                 {% endfor %}
@@ -99,7 +99,7 @@
               <div class="photo-proposals">
                 <strong>Proposals:</strong>
                 {% for tag in tag_proposals %}
-                  <button type="button" class="proposal-chip" onclick='previewTagChange([{{ photo.path|tojson }}], [{{ tag|tojson }}], [])' {% if read_only %}disabled{% endif %}>{{ tag }}</button>
+                  <button type="button" class="proposal-chip" onclick='applyTagChange([{{ photo.path|tojson }}], [{{ tag|tojson }}], [])' {% if read_only %}disabled{% endif %}>{{ tag }}</button>
                 {% endfor %}
               </div>
               <div class="input-action">
@@ -208,7 +208,6 @@ const candidateSlugsByName = new Map(
     .map(candidate => [candidate.artist.toLocaleLowerCase(), candidate.artist_slug])
 );
 const allPhotoPaths = [...cluster.photos, ...cluster.context_photos].map(photo => photo.path);
-let pendingTagPlan = null;
 let pendingGpsPlan = null;
 let gpsMap = null;
 let gpsTarget = null;
@@ -247,7 +246,7 @@ function addInputTag(selectedOnly) {
   const input = document.getElementById('cluster-tag-input');
   const tag = input.value.trim();
   if (!tag) return;
-  previewTagChange(selectedOnly ? selectedPaths() : allPhotoPaths, [tag], []);
+  applyTagChange(selectedOnly ? selectedPaths() : allPhotoPaths, [tag], []);
 }
 
 function addPhotoTag(button) {
@@ -255,19 +254,29 @@ function addPhotoTag(button) {
   const input = photo.querySelector('.photo-tag-input');
   const tag = input.value.trim();
   if (!tag) return;
-  previewTagChange([photo.dataset.path], [tag], []);
+  applyTagChange([photo.dataset.path], [tag], []);
 }
 
-async function previewTagChange(paths, add, remove) {
+async function applyTagChange(paths, add, remove) {
   const container = document.getElementById('tag-plan');
+  container.textContent = 'Updating tags…';
   try {
     const result = await api(`/api/runs/${encodeURIComponent(runId)}/clusters/${encodeURIComponent(clusterId)}/tags/preview`, {paths, add, remove});
-    pendingTagPlan = result.plan;
-    const changed = pendingTagPlan.items.filter(item => item.changed);
-    const rows = changed.map(item => `<li><code>${escapeHtml(item.path)}</code><br>${escapeHtml(item.before.join(', ') || 'no tags')} → ${escapeHtml(item.after.join(', ') || 'no tags')}</li>`).join('');
-    container.innerHTML = changed.length
-      ? `<strong>${changed.length} image(s) would change.</strong><ul>${rows}</ul><button class="primary" onclick="applyPlan('tag')">Apply previewed tags</button>`
-      : '<span class="muted">No image would change.</span>';
+    const plan = result.plan;
+    const changed = plan.items.filter(item => item.changed);
+    if (!changed.length) {
+      container.textContent = 'No image changed.';
+      return;
+    }
+    const addedTags = [...new Set(plan.items.flatMap(item =>
+      item.after.filter(tag => !item.before.includes(tag))
+    ))];
+    const applied = await api(`/api/plans/${encodeURIComponent(plan.id)}/apply`, {});
+    container.textContent = `${applied.changed} image(s) updated.`;
+    for (const tag of addedTags) {
+      await maybeAddArtistToCsv(tag);
+    }
+    location.reload();
   } catch (error) {
     container.textContent = error.message;
   }
@@ -278,27 +287,6 @@ async function openLocalPath(action, path) {
     await api('/api/open-local', {action, target: path});
   } catch (error) {
     alert(error.message);
-  }
-}
-
-async function applyPlan(kind) {
-  const plan = kind === 'tag' ? pendingTagPlan : pendingGpsPlan;
-  const container = document.getElementById(kind === 'tag' ? 'tag-plan' : 'gps-plan');
-  if (!plan || !confirm(`Apply this exact preview to ${plan.items.length} image(s)?`)) return;
-  const addedTags = kind === 'tag'
-    ? [...new Set(plan.items.flatMap(item =>
-        item.after.filter(tag => !item.before.includes(tag))
-      ))]
-    : [];
-  try {
-    const result = await api(`/api/plans/${encodeURIComponent(plan.id)}/apply`, {});
-    container.textContent = `${result.changed} image(s) updated.`;
-    for (const tag of addedTags) {
-      await maybeAddArtistToCsv(tag);
-    }
-    location.reload();
-  } catch (error) {
-    container.textContent = error.message;
   }
 }
 
@@ -776,6 +764,17 @@ document.addEventListener('keydown', event => {
     event.preventDefault();
     editors[next].focus();
   }
+});
+document.querySelectorAll('.tag-editor:not(:disabled)').forEach(editor => {
+  editor.addEventListener('keydown', event => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    if (editor.id === 'cluster-tag-input') {
+      addInputTag(false);
+    } else {
+      addPhotoTag(editor.closest('.input-action').querySelector('button'));
+    }
+  });
 });
 initResizers();
 initGpsMap();

@@ -62,19 +62,23 @@ artist-assisted free-form input, Explorer/default-app actions, and a full-size
 link.
 
 Primary photos are selected by default; context photos are not. Tags can be
-previewed for one image, the selected images, or every cluster image.
+applied directly to one image, the selected images, or every cluster image.
 `_unknown` and `_wall` remain available as workflow proposals. The GPS map
 shows primary, context, and Street Art Cities positions; drag its target and
-preview the move for the selected images. Tag and GPS actions always show exact
-files and before/after values before a separate apply confirmation.
+preview the move for the selected images. GPS actions show exact files and
+before/after values before a separate apply confirmation.
 
 Tags found on every cluster image appear once in **On all photos**, where they
-can be previewed for removal from the complete cluster. Autocomplete lists
+can be removed directly from the complete cluster. Autocomplete lists
 `_unknown` and `_wall` before artist entries for underscore queries. Tab and
 Shift+Tab move directly between cluster/per-image tag editors, and the first
 tag editor receives focus whenever a cluster page opens.
 
-Applied tag plans reload the cluster so new labels are immediately visible.
+The × button removes an existing tag immediately. **Add**, **Add to all**, and
+**Add to selected** also write immediately; pressing Enter in a tag editor is
+equivalent to its default Add action. Internal exact plans still provide
+fingerprint validation, atomic writes, and change logs. The cluster reloads so
+new labels are immediately visible.
 When a newly added non-internal tag is absent from `data/artists.csv`, a helper
 asks the user to confirm its Street Art Cities slug and Instagram handle before
 atomically appending it. Tags beginning with `_` never trigger this helper.

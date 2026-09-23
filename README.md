@@ -14,7 +14,7 @@ affiliated with or endorsed by Street Art Cities.
 - Group photos by tag and location, retaining wide/multi-tag context photos.
 - Optionally split ambiguous local clusters with OpenCV.
 - Write offline JSON and Markdown cluster reports.
-- Preview and atomically apply flat tag edits with stale-plan rejection.
+- Directly apply flat tag edits through atomic plans with stale-file rejection.
 - Repair missing GPS from same-camera or trusted cross-camera references.
 - Preview explicit manual GPS positioning and log every metadata change.
 - Generate cancellable persistent runs and review clusters in the browser.
@@ -24,8 +24,7 @@ affiliated with or endorsed by Street Art Cities.
   two-pane photo/tag/GPS workspace.
 - Sort the dashboard by index, tag, capture time, photo count, or SAC status;
   cluster navigation follows that order.
-- Apply artist-assisted tags to one, selected, or all cluster images through
-  exact preview plans.
+- Apply artist-assisted tags directly to one, selected, or all cluster images.
 - Reposition selected images together or drag individual photo markers to
   independent coordinates before previewing the write.
 - Optionally refresh a complete Street Art Cities city marker set and compare
@@ -72,9 +71,9 @@ python -m street_art_photo_assistant cluster --visual --output _runs\manual
 The core workflow is local and has no telemetry. Provider access is used only
 when Street Art Cities matching is enabled. An offline report's GPS map can
 optionally request third-party display tiles when the user selects a network
-base map; tiles are never matching evidence. Photo metadata writes require
-an exact preview and confirmation, preserve unrelated metadata, and create a
-JSON change log.
+base map; tiles are never matching evidence. Tag edits apply immediately
+through exact atomic plans; GPS writes require preview and confirmation. Both
+preserve unrelated metadata and create a JSON change log.
 
 Do not commit `config.local.json`, photos, run output, reference-image caches,
 or other local data.

@@ -9,7 +9,8 @@
 4. Use `_unknown` for untagged artwork and `_wall` for wall-level grouping.
 5. Optionally split nearby groups using local OpenCV visual matching.
 6. Review clusters in a local browser interface.
-7. Preview and log every tag or GPS metadata write.
+7. Apply tag edits directly through exact atomic plans; preview GPS writes and
+   log every metadata change.
 8. Repair missing GPS using exact same-camera or cross-camera plans.
 9. Reject a repair plan when a target or reference file changed.
 10. Work fully offline when Street Art Cities matching is disabled.
@@ -43,4 +44,3 @@
 - Matching-disabled runs make no Street Art Cities requests.
 - The repository contains only synthetic fixtures and curated public mapping
   data.
-
