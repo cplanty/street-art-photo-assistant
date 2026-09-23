@@ -62,6 +62,12 @@ class WebTests(unittest.TestCase):
         self.assertIn("Preview selection", page)
         self.assertIn("Apply previewed GPS fixes", page)
         self.assertIn("Refresh &amp; run", page)
+        self.assertIn(
+            "Preview complete. You can now generate report",
+            page,
+        )
+        self.assertNotIn('id="temporary_folder" readonly', page)
+        self.assertNotIn('readonly placeholder="Choose a folder"', page)
 
     def test_cached_cities_are_suggested(self):
         cache = self.root / "data" / "cities"

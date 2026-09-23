@@ -89,7 +89,7 @@
         <h2>Configuration</h2>
         <label>Temporary photo folder
           <span class="input-action">
-            <input id="temporary_folder" readonly>
+            <input id="temporary_folder">
             <button type="button" onclick="browseTemporary()">Browse…</button>
           </span>
         </label>
@@ -200,7 +200,8 @@ function renderSources() {
         onchange="config.sources[${index}].enabled=this.checked; changed()">
       <input value="${escapeHtml(source.name)}" placeholder="Name"
         oninput="config.sources[${index}].name=this.value; changed()">
-      <input value="${escapeHtml(source.path)}" readonly placeholder="Choose a folder">
+      <input value="${escapeHtml(source.path)}" placeholder="Choose or enter a folder"
+        oninput="config.sources[${index}].path=this.value; changed()">
       <button type="button" onclick="browseSource(${index})">Browse…</button>
       <button type="button" onclick="config.sources.splice(${index},1); renderSources(); changed()">Remove</button>
     </div>`).join('');
@@ -355,7 +356,7 @@ async function previewSelection() {
     byId('gps-apply-button').disabled = true;
     byId('preview-result').innerHTML = `<p><strong>${preview.selected} selected</strong> of ${preview.scanned} scanned · ${preview.tagged} tagged · ${preview.untagged} untagged · ${preview.missing_gps} without GPS</p>
       <p class="muted">${escapeHtml(preview.first_capture || 'no capture time')} to ${escapeHtml(preview.last_capture || '—')}</p>`;
-    byId('preview-message').textContent = 'Preview complete.';
+    byId('preview-message').textContent = 'Preview complete. You can now generate report';
   } catch (error) {
     invalidate();
     byId('preview-message').textContent = error.message;

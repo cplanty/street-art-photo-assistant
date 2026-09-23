@@ -7,7 +7,7 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; }
-main { max-width: 1200px; margin: 32px auto; padding: 0 20px 48px; }
+main { width: 100%; margin: 32px 0; padding: 0 20px 48px; }
 h1, h2, h3 { margin-top: 0; }
 label { display: block; font-size: 0.9rem; font-weight: 600; }
 input, select, textarea, button, .button {
@@ -79,4 +79,3 @@ code { overflow-wrap: anywhere; }
   .source-row { grid-template-columns: 28px 1fr auto; }
   .source-row input:nth-of-type(2) { grid-column: 2 / -1; }
 }
-

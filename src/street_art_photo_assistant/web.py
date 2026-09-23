@@ -72,13 +72,25 @@ def _choose_folder(initial: str) -> str:
         from tkinter import filedialog
     except ImportError as exc:
         raise RuntimeError("The native folder requester is unavailable") from exc
-    root = tkinter.Tk()
-    root.withdraw()
     try:
-        return filedialog.askdirectory(
-            initialdir=initial if Path(initial).is_dir() else None,
-            mustexist=True,
-        )
+        root = tkinter.Tk()
+    except tkinter.TclError as exc:
+        raise RuntimeError(
+            f"Could not open the native folder requester: {exc}"
+        ) from exc
+    try:
+        root.withdraw()
+        root.attributes("-topmost", True)
+        root.update()
+        try:
+            return filedialog.askdirectory(
+                parent=root,
+                title="Select a photo folder",
+                initialdir=initial if Path(initial).is_dir() else None,
+                mustexist=True,
+            ) or ""
+        except tkinter.TclError as exc:
+            raise RuntimeError(f"Folder requester failed: {exc}") from exc
     finally:
         root.destroy()
 
