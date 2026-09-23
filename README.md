@@ -39,7 +39,7 @@ Copy-Item config.example.json config.local.json
 python -m street_art_photo_assistant
 ```
 
-Open <http://127.0.0.1:8765/>.
+Open <http://127.0.0.1:8787/>.
 
 Create an offline cluster report directly from the configured sources:
 

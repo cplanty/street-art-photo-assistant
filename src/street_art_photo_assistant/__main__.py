@@ -22,7 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--config", type=Path, default=Path("config.local.json")
     )
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, default=8787)
     parser.add_argument("--debug", action="store_true")
     parser.add_argument(
         "--output",
