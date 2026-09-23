@@ -101,6 +101,7 @@ class WorkflowTests(unittest.TestCase):
             }]
             config["matching"]["street_art_cities_enabled"] = True
             config["matching"]["city"] = "test-city"
+            config["matching"]["download_images"] = True
             config["matching"]["large_city_warning_markers"] = 1
             evidence = {
                 "synthetic": {
@@ -112,12 +113,23 @@ class WorkflowTests(unittest.TestCase):
             with (
                 patch(
                     "street_art_photo_assistant.sac.refresh_city",
-                    return_value={"city": "test-city", "markers": [{}]},
+                    return_value={
+                        "city": "test-city",
+                        "markers": [{"image_url": "https://example.test/a.jpg"}],
+                    },
                 ) as refresh,
                 patch(
                     "street_art_photo_assistant.sac.compare_clusters",
                     return_value=evidence,
                 ) as compare,
+                patch(
+                    "street_art_photo_assistant.sac.cache_city_images",
+                    return_value={
+                        "available": 1,
+                        "cached": 1,
+                        "failed": 0,
+                    },
+                ) as cache_images,
             ):
                 run_offline_clustering(
                     config,
@@ -133,6 +145,7 @@ class WorkflowTests(unittest.TestCase):
 
         refresh.assert_called_once()
         compare.assert_called_once()
+        cache_images.assert_called_once()
         self.assertEqual("street-art-cities", report["mode"])
         self.assertEqual("test-city", report["city"])
         self.assertIn("Large city catalogue", progress["warnings"][0])

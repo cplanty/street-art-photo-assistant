@@ -35,6 +35,8 @@ apply endpoints while keeping preview and reports available.
   (`balanced`), or 16 (`thorough`).
 - `matching.request_interval_seconds` is the minimum delay between SAC
   requests. Increase it to reduce request throughput.
+- `matching.download_images` caches all available city marker pictures for
+  evidence and map thumbnails. It defaults to `false`.
 - `matching.large_city_warning_markers` and
   `matching.large_reference_warning` control progress warnings for large work.
 - `paths.city_cache` and `paths.reference_images` select local provider caches.

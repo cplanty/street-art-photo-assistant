@@ -19,6 +19,9 @@ bounded live log tail. Progress survives a page refresh because each run writes
 `progress.json`. On completion, the new report is inserted into **Recent runs**
 without requiring a page reload.
 
+Editing the optional run label after selection preview does not invalidate the
+preview or disable **Refresh & run**.
+
 The report opens on the cluster dashboard. Selecting a cluster opens a
 resizable two-pane workspace: local photos and tag controls are on the left;
 GPS positioning and optional Street Art Cities evidence are on the right.
@@ -66,8 +69,11 @@ can be previewed for removal from the complete cluster. Autocomplete lists
 Shift+Tab move directly between cluster/per-image tag editors.
 
 To fix one image independently, click its blue/grey map point to select it,
-drag it, and choose **Preview individual moves**. Multiple independently moved
-points become one exact plan while retaining distinct destination coordinates.
+view its thumbnail, and drag it. The map shows the number of pending markers
+and an **Apply** action. Moving the red target enables a green **Apply to all**
+action. Both actions build the exact plan internally, show the file/coordinate
+confirmation, and only then write. Multiple independently moved points retain
+distinct destination coordinates.
 
 The bundled Leaflet map starts with an offline coordinate grid when Street Art
 Cities matching is disabled. **OpenStreetMap (network)** can be selected as

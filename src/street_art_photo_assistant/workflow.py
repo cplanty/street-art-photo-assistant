@@ -202,6 +202,7 @@ def run_offline_clustering(
         from .sac import (
             USER_AGENT,
             RequestThrottle,
+            cache_city_images,
             compare_clusters,
             refresh_city,
         )
@@ -245,6 +246,60 @@ def run_offline_clustering(
             warning=marker_warning,
         )
 
+        if matching.get("download_images"):
+            image_count = sum(
+                bool(marker.get("image_url"))
+                for marker in city_payload["markers"]
+            )
+
+            def city_image_progress(
+                stage: str,
+                current: int,
+                total: int,
+                message: str,
+            ) -> None:
+                ratio = current / total if total else 1
+                progress.update(
+                    stage=stage,
+                    percent=65 + 18 * ratio,
+                    message=message,
+                    current=current,
+                    total=total,
+                    warning=(
+                        (
+                            f"Large city picture workload: {total} SAC "
+                            "pictures will be read from cache or downloaded."
+                        )
+                        if total >= int(
+                            matching["large_reference_warning"]
+                        ) else None
+                    ),
+                )
+
+            progress.update(
+                stage="sac-city-images",
+                percent=65,
+                message=f"Preparing {image_count} SAC city picture(s)",
+                current=0,
+                total=image_count,
+            )
+            image_summary = cache_city_images(
+                city_payload["markers"],
+                _resolve(config_root, paths["reference_images"]),
+                throttle=throttle,
+                progress=city_image_progress,
+            )
+            progress.update(
+                stage="sac-city-images",
+                percent=83,
+                message=(
+                    f"Prepared {image_summary['cached']} SAC picture(s); "
+                    f"{image_summary['failed']} failed"
+                ),
+                current=image_summary["available"],
+                total=image_summary["available"],
+            )
+
         def sac_progress(
             stage: str,
             current: int,
@@ -253,7 +308,7 @@ def run_offline_clustering(
         ) -> None:
             ratio = current / total if total else 1
             if stage == "sac-images":
-                percent = 75 + 17 * ratio
+                percent = 83 + 9 * ratio
                 warning = (
                     (
                         f"Large reference workload: {total} nearby SAC "
@@ -264,7 +319,7 @@ def run_offline_clustering(
                     ) else None
                 )
             else:
-                percent = 65 + 10 * ratio
+                percent = 65 + 18 * ratio
                 warning = None
             progress.update(
                 stage=stage,

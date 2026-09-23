@@ -75,6 +75,7 @@ class WebTests(unittest.TestCase):
         page = response.get_data(as_text=True)
         self.assertIn("Street Art Cities matching", page)
         self.assertIn("Visual matching", page)
+        self.assertIn("Scrape SAC pictures too", page)
         self.assertIn("Configuration", page)
         self.assertIn("Preview selection", page)
         self.assertIn("Apply previewed GPS fixes", page)
@@ -212,7 +213,16 @@ class WebTests(unittest.TestCase):
         self.assertIn("event.ctrlKey", detail_page)
         self.assertIn("ArrowLeft", detail_page)
         self.assertIn("ArrowRight", detail_page)
-        self.assertIn("previewIndividualGpsMoves", detail_page)
+        self.assertIn("applyIndividualGpsMoves", detail_page)
+        self.assertNotIn("Preview individual moves", detail_page)
+        self.assertIn("Apply to all", detail_page)
+        self.assertIn('<strong id="latitude">', detail_page)
+        self.assertNotIn('<input id="latitude"', detail_page)
+        self.assertNotIn("moveTargetFromFields", detail_page)
+        self.assertIn("gps-popup-thumbnail", detail_page)
+        stylesheet_response = self.client.get("/static/app.css")
+        self.assertIn("[hidden] { display: none !important; }", stylesheet_response.get_data(as_text=True))
+        stylesheet_response.close()
         listed = self.client.get("/api/runs").get_json()["runs"]
         self.assertEqual(started["id"], listed[0]["id"])
         deleted = self.client.delete(f"/api/runs/{started['id']}")
@@ -229,6 +239,30 @@ class WebTests(unittest.TestCase):
         })
         self.assertEqual(400, response.status_code)
         self.assertIn("unchanged", response.get_json()["error"])
+
+    def test_changed_run_label_keeps_preview_token_valid(self):
+        preview = self.preview()
+        changed = deepcopy(self.config)
+        changed["run_label"] = "Label added after preview"
+
+        response = self.client.post("/api/runs", json={
+            "config": changed,
+            "preview_token": preview["token"],
+        })
+
+        self.assertEqual(200, response.status_code)
+        run = response.get_json()["run"]
+        self.assertEqual(
+            "Label added after preview",
+            run["label"],
+        )
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            if self.manager.status(run["id"])["status"] not in {
+                "queued", "running"
+            }:
+                break
+            time.sleep(0.05)
 
     def test_read_only_mode_rejects_plan_apply(self):
         read_only = deepcopy(self.config)

@@ -14,6 +14,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual("_unknown", config["clustering"]["unknown_tag"])
         self.assertEqual("_wall", config["clustering"]["wall_tag"])
         self.assertFalse(config["matching"]["street_art_cities_enabled"])
+        self.assertFalse(config["matching"]["download_images"])
         self.assertEqual([], config["selection"]["exclude_tags"])
 
     def test_save_round_trip_is_atomic_and_utf8(self):

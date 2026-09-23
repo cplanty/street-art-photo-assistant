@@ -68,6 +68,11 @@
         <label>City slug <input id="city" list="cached-cities" placeholder="for example: orleans"></label>
         <datalist id="cached-cities">{% for city in cached_cities %}<option value="{{ city }}">{% endfor %}</datalist>
         <p class="muted">Leave matching disabled for a completely offline cluster report.</p>
+        <label class="check">
+          <input id="download_images" type="checkbox">
+          Scrape SAC pictures too
+        </label>
+        <p class="muted">Downloads and caches marker pictures for the GPS map and evidence. Off by default; large cities can require many sequential, throttled requests.</p>
 
         <div class="subsection">
           <h3>Visual matching</h3>
@@ -304,6 +309,7 @@ function readForm() {
     street_art_cities_enabled: byId('sac_enabled').checked,
     city: byId('city').value.trim(),
     visual_enabled: byId('visual_enabled').checked,
+    download_images: byId('download_images').checked,
     profile: byId('profile').value
   });
   return config;
@@ -322,6 +328,7 @@ function writeForm() {
   byId('sac_enabled').checked = !!config.matching.street_art_cities_enabled;
   byId('city').value = config.matching.city || '';
   byId('visual_enabled').checked = !!config.matching.visual_enabled;
+  byId('download_images').checked = !!config.matching.download_images;
   byId('profile').value = config.matching.profile || 'balanced';
 }
 
@@ -534,9 +541,13 @@ async function deleteRun(id) {
 }
 
 document.querySelectorAll('input,select,textarea').forEach(element => {
-  if (!['auto_save', 'diagnostics-detailed'].includes(element.id)) {
+  if (!['auto_save', 'diagnostics-detailed', 'run_label'].includes(element.id)) {
     element.addEventListener('input', changed);
   }
+});
+byId('run_label').addEventListener('input', () => {
+  config.run_label = byId('run_label').value;
+  scheduleAutosave();
 });
 byId('auto_save').addEventListener('change', () => saveConfiguration(false));
 writeForm();

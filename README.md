@@ -30,6 +30,8 @@ affiliated with or endorsed by Street Art Cities.
   independent coordinates before previewing the write.
 - Optionally refresh a complete Street Art Cities city marker set and compare
   nearby candidates by artist, GPS, and local OpenCV evidence.
+- Optionally cache all available SAC marker pictures for evidence and map
+  thumbnails; this is disabled by default.
 - Inspect exact tag/GPS plans before applying them from cluster detail pages.
 - Keep all configuration, reports, and cached data on the local computer.
 - Generate inspectable, privacy-redacted diagnostic ZIPs for issue reports.

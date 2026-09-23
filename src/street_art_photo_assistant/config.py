@@ -39,6 +39,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "street_art_cities_enabled": False,
         "city": "",
         "visual_enabled": False,
+        "download_images": False,
         "profile": "balanced",
         "candidate_radius_m": 80,
         "request_interval_seconds": 0.5,

@@ -86,6 +86,7 @@ def _config_summary(config: dict[str, Any]) -> dict[str, Any]:
             ),
             "city_configured": bool(matching.get("city")),
             "visual_enabled": bool(matching.get("visual_enabled")),
+            "download_images": bool(matching.get("download_images")),
             "profile": matching.get("profile"),
             "candidate_radius_m": matching.get("candidate_radius_m"),
             "request_interval_seconds": matching.get(

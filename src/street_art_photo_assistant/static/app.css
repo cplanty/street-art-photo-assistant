@@ -6,6 +6,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; }
 main { width: 100%; margin: 32px 0; padding: 0 20px 48px; }
 h1, h2, h3 { margin-top: 0; }
@@ -273,6 +274,19 @@ code { overflow-wrap: anywhere; }
   box-shadow: 0 0 0 2px #fff, 0 0 6px rgba(207, 34, 46, 0.8);
 }
 .gps-photo-dot.moved { border-color: #bf8700; border-style: dashed; }
+.gps-apply-ready:not(:disabled) {
+  border-color: #1a7f37;
+  background: #1f883d;
+  color: white;
+}
+.gps-apply-ready:not(:disabled):hover { background: #1a7f37; }
+.gps-popup-thumbnail {
+  display: block;
+  max-width: 220px;
+  max-height: 170px;
+  margin-top: 6px;
+  object-fit: contain;
+}
 .sac-candidates {
   display: flex;
   flex-direction: column;

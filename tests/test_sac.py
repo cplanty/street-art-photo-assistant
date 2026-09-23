@@ -11,6 +11,7 @@ from street_art_photo_assistant.models import PhotoCluster
 from street_art_photo_assistant.sac import (
     USER_AGENT,
     RequestThrottle,
+    cache_city_images,
     cache_reference_image,
     cached_cities,
     compare_clusters,
@@ -154,6 +155,44 @@ class SACTests(unittest.TestCase):
         self.assertEqual("review", result["cluster"]["status"])
         session.get.assert_not_called()
 
+    def test_cached_city_picture_is_kept_without_visual_matching(self):
+        cluster = PhotoCluster(
+            id="cluster",
+            tag="Artist",
+            latitude=48.0,
+            longitude=2.0,
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cached = root / "marker.jpg"
+            cached.write_bytes(b"already verified cache")
+            artists = root / "artists.csv"
+            artists.write_text(
+                "tag;streetartcities_slug;instagram;status\n"
+                "Artist;artist;artist;confirmed\n",
+                encoding="utf-8",
+            )
+            result = compare_clusters(
+                [cluster],
+                {"city": "test-city", "markers": [{
+                    "marker_id": "marker",
+                    "latitude": 48.0,
+                    "longitude": 2.0,
+                    "artist_slug": "artist",
+                    "cached_image": str(cached),
+                }]},
+                artist_mapping_path=artists,
+                reference_cache=root,
+                candidate_radius_m=100,
+                visual_enabled=False,
+                profile="balanced",
+            )
+
+        self.assertEqual(
+            str(cached),
+            result["cluster"]["candidates"][0]["cached_image"],
+        )
+
     def test_reference_cache_rejects_invalid_image_content(self):
         session = Mock()
         session.get.return_value = FakeResponse(content=b"not an image")
@@ -189,6 +228,40 @@ class SACTests(unittest.TestCase):
 
             self.assertEqual(cache / "marker-1.jpg", cached)
             self.assertTrue(cached.is_file())
+
+    def test_city_picture_download_caches_images_and_reports_progress(self):
+        image_bytes = BytesIO()
+        Image.new("RGB", (4, 4), "green").save(image_bytes, format="JPEG")
+        session = Mock()
+        session.get.return_value = FakeResponse(content=image_bytes.getvalue())
+        markers = [
+            {
+                "marker_id": "marker-1",
+                "image_url": "https://images.example.test/one.jpg",
+            },
+            {
+                "marker_id": "marker-2",
+                "image_url": None,
+            },
+        ]
+        progress = []
+        with tempfile.TemporaryDirectory() as temporary:
+            summary = cache_city_images(
+                markers,
+                Path(temporary),
+                session=session,
+                progress=lambda *event: progress.append(event),
+            )
+
+        self.assertEqual(
+            {"available": 1, "cached": 1, "failed": 0},
+            summary,
+        )
+        self.assertTrue(markers[0]["cached_image"].endswith("marker-1.jpg"))
+        self.assertEqual("sac-city-images", progress[0][0])
+        self.assertEqual(USER_AGENT, session.get.call_args.kwargs[
+            "headers"
+        ]["User-Agent"])
 
     def test_visual_reference_failure_is_reported_without_aborting(self):
         cluster = PhotoCluster(

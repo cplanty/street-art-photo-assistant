@@ -45,8 +45,10 @@ from .workflow import scan_and_select, sources_from_config
 
 
 def _signature(config: dict[str, Any]) -> str:
+    signed = deepcopy(config)
+    signed.pop("run_label", None)
     encoded = json.dumps(
-        config, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        signed, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 

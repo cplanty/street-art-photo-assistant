@@ -105,7 +105,7 @@
     <div class="detail-column">
       <section class="card gps-map-card">
         <h2>GPS position utility</h2>
-        <p class="muted">Blue points are primary photos, grey points are context images, and green points are Street Art Cities markers. Drag the red target to move selected images together. Click a photo point to select it, then drag it for an individual correction.</p>
+        <p class="muted">Blue points are primary photos, grey points are context images, and green points are Street Art Cities markers. Drag the red target to move all cluster images together. Click a photo point to see its thumbnail and select it, then drag it for an individual correction.</p>
         <div id="gps-map"></div>
         <div class="form-row">
           <label>Map background
@@ -114,14 +114,14 @@
               <option value="osm">OpenStreetMap (network)</option>
             </select>
           </label>
-          <label>Latitude <input id="latitude" type="number" step="any" value="{{ cluster.latitude if cluster.latitude is not none else '' }}"></label>
-          <label>Longitude <input id="longitude" type="number" step="any" value="{{ cluster.longitude if cluster.longitude is not none else '' }}"></label>
-          <button type="button" onclick="previewGpsMove()" {% if read_only %}disabled{% endif %}>Preview selected images</button>
+          <span>Latitude <strong id="latitude">{{ '%.7f'|format(cluster.latitude) if cluster.latitude is not none else '—' }}</strong></span>
+          <span>Longitude <strong id="longitude">{{ '%.7f'|format(cluster.longitude) if cluster.longitude is not none else '—' }}</strong></span>
+          <button id="gps-apply-all" type="button" onclick="applyGlobalGps()" disabled>Apply to all</button>
           <button type="button" onclick="resetGpsTarget()">Reset target</button>
         </div>
         <div id="individual-gps-controls" class="button-row" hidden>
           <strong id="individual-gps-count"></strong>
-          <button type="button" onclick="previewIndividualGpsMoves()" {% if read_only %}disabled{% endif %}>Preview individual moves</button>
+          <button class="gps-apply-ready" type="button" onclick="applyIndividualGpsMoves()" {% if read_only %}disabled{% endif %}>Apply</button>
           <button type="button" onclick="cancelIndividualGpsMoves()">Cancel individual moves</button>
         </div>
         <div id="gps-plan" class="plan-preview"></div>
@@ -258,19 +258,20 @@ function mapPoint(photo, kind) {
     path: photo.path,
     lat: Number(photo.latitude),
     lon: Number(photo.longitude),
-    kind
+    kind,
+    thumbnail: `/photo?path=${encodeURIComponent(photo.path)}`
   };
 }
 
 function updateTargetFields(lat, lon) {
-  document.getElementById('latitude').value = lat.toFixed(7);
-  document.getElementById('longitude').value = lon.toFixed(7);
+  document.getElementById('latitude').textContent = lat.toFixed(7);
+  document.getElementById('longitude').textContent = lon.toFixed(7);
 }
 
 function initGpsMap() {
   const mapElement = document.getElementById('gps-map');
   if (typeof L === 'undefined') {
-    mapElement.innerHTML = '<p class="muted">The map library could not load. Enter coordinates manually below.</p>';
+    mapElement.innerHTML = '<p class="muted">The map library could not load.</p>';
     return;
   }
   gpsMap = L.map(mapElement, {scrollWheelZoom: true});
@@ -321,7 +322,10 @@ function initGpsMap() {
       lat: Number(candidate.latitude),
       lon: Number(candidate.longitude),
       kind: 'site',
-      url: candidate.url
+      url: candidate.url,
+      thumbnail: candidate.cached_image
+        ? `/reference?path=${encodeURIComponent(candidate.cached_image)}`
+        : null
     }));
   const bounds = [];
   const targetIcon = L.divIcon({
@@ -378,7 +382,7 @@ function initGpsMap() {
     }).addTo(gpsMap);
     entry.marker = marker;
     photoMarkers.push(entry);
-    marker.bindTooltip(`<strong>${escapeHtml(point.name)}</strong><br>Click to select; drag to correct this image`);
+    marker.bindPopup(`<strong>${escapeHtml(point.name)}</strong><br><img class="gps-popup-thumbnail" src="${point.thumbnail}" alt=""><br><span class="muted">Selected: drag to correct this image</span>`);
     if (!readOnly) {
       marker.on('click', event => {
         if (event.originalEvent) L.DomEvent.stopPropagation(event.originalEvent);
@@ -406,8 +410,11 @@ function initGpsMap() {
       fillColor: '#1a7f37',
       fillOpacity: 1
     }).addTo(gpsMap);
+    const thumbnail = point.thumbnail
+      ? `<br><img class="gps-popup-thumbnail" src="${point.thumbnail}" alt="">`
+      : '';
     const link = point.url ? `<br><a href="${escapeHtml(point.url)}" target="_blank" rel="noopener">Open SAC marker</a>` : '';
-    marker.bindTooltip(`<strong>${escapeHtml(point.name)}</strong>${link}`);
+    marker.bindPopup(`<strong>${escapeHtml(point.name)}</strong>${thumbnail}${link}`);
     bounds.push([point.lat, point.lon]);
   });
   gpsMap.on('click', () => selectPhotoMarker(null));
@@ -416,6 +423,7 @@ function initGpsMap() {
     : bounds[0] || null;
   if (defaultPoint) {
     initialTarget = defaultPoint;
+    updateTargetFields(defaultPoint[0], defaultPoint[1]);
     gpsTarget = L.marker(defaultPoint, {
       draggable: !readOnly,
       icon: targetIcon,
@@ -425,7 +433,9 @@ function initGpsMap() {
     gpsTarget.on('drag', event => {
       const point = event.target.getLatLng();
       updateTargetFields(point.lat, point.lng);
+      updateGlobalGpsControls();
     });
+    gpsTarget.on('dragend', updateGlobalGpsControls);
     bounds.push(defaultPoint);
   }
   if (bounds.length === 1) gpsMap.setView(bounds[0], 18);
@@ -436,58 +446,60 @@ function initGpsMap() {
   }
 }
 
-function moveTargetFromFields() {
-  const lat = Number(document.getElementById('latitude').value);
-  const lon = Number(document.getElementById('longitude').value);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon) || !gpsMap) return;
-  if (!gpsTarget) {
-    initialTarget = [lat, lon];
-    const targetIcon = L.divIcon({
-      className: '',
-      html: '<div class="gps-target"></div>',
-      iconSize: [22, 22],
-      iconAnchor: [11, 11]
-    });
-    gpsTarget = L.marker([lat, lon], {
-      draggable: !readOnly,
-      icon: targetIcon,
-      zIndexOffset: 1000
-    }).addTo(gpsMap);
-    gpsTarget.on('drag', event => {
-      const point = event.target.getLatLng();
-      updateTargetFields(point.lat, point.lng);
-    });
-  } else {
-    gpsTarget.setLatLng([lat, lon]);
-  }
-  gpsMap.panTo([lat, lon]);
-}
-
 function resetGpsTarget() {
   if (!initialTarget) return;
   updateTargetFields(initialTarget[0], initialTarget[1]);
   if (gpsTarget) gpsTarget.setLatLng(initialTarget);
   if (gpsMap) gpsMap.panTo(initialTarget);
+  updateGlobalGpsControls();
 }
 
-async function previewGpsMove() {
+function updateGlobalGpsControls() {
+  const button = document.getElementById('gps-apply-all');
+  if (!gpsTarget || readOnly) {
+    button.disabled = true;
+    return;
+  }
+  const position = gpsTarget.getLatLng();
+  const moved = !initialTarget || (
+    Math.abs(position.lat - initialTarget[0]) > 1e-9
+    || Math.abs(position.lng - initialTarget[1]) > 1e-9
+  );
+  button.disabled = !moved;
+  button.classList.toggle('gps-apply-ready', moved);
+}
+
+async function confirmAndApplyGpsPlan(plan, description) {
   const container = document.getElementById('gps-plan');
-  const paths = selectedPaths();
-  const latitude = Number(document.getElementById('latitude').value);
-  const longitude = Number(document.getElementById('longitude').value);
-  if (!paths.length) {
-    container.textContent = 'Select at least one image on the left.';
-    return;
-  }
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-    container.textContent = 'Enter a valid latitude and longitude.';
-    return;
-  }
+  const details = plan.items.map(item =>
+    `${item.path}\n  ${item.before.latitude ?? 'no GPS'}, ${item.before.longitude ?? 'no GPS'} → ${item.after.latitude}, ${item.after.longitude}`
+  ).join('\n\n');
+  if (!confirm(`${description}\n\n${details}`)) return;
   try {
-    const result = await api(`/api/runs/${encodeURIComponent(runId)}/clusters/${encodeURIComponent(clusterId)}/gps/preview`, {latitude, longitude, paths});
+    const result = await api(`/api/plans/${encodeURIComponent(plan.id)}/apply`, {});
+    container.textContent = `${result.changed} image(s) updated. Reloading…`;
+    setTimeout(() => location.reload(), 500);
+  } catch (error) {
+    container.textContent = error.message;
+  }
+}
+
+async function applyGlobalGps() {
+  const container = document.getElementById('gps-plan');
+  if (!gpsTarget) {
+    container.textContent = 'No GPS target is available.';
+    return;
+  }
+  const target = gpsTarget.getLatLng();
+  const latitude = target.lat;
+  const longitude = target.lng;
+  try {
+    const result = await api(`/api/runs/${encodeURIComponent(runId)}/clusters/${encodeURIComponent(clusterId)}/gps/preview`, {latitude, longitude, paths: allPhotoPaths});
     pendingGpsPlan = result.plan;
-    const rows = pendingGpsPlan.items.map(item => `<li><code>${escapeHtml(item.path)}</code>: ${escapeHtml(item.before.latitude ?? 'no GPS')}, ${escapeHtml(item.before.longitude ?? 'no GPS')} → ${escapeHtml(item.after.latitude)}, ${escapeHtml(item.after.longitude)}</li>`).join('');
-    container.innerHTML = `<strong>${pendingGpsPlan.items.length} image(s) would move.</strong><ul>${rows}</ul><button class="primary" onclick="applyPlan('gps')">Apply previewed GPS</button>`;
+    await confirmAndApplyGpsPlan(
+      pendingGpsPlan,
+      `Apply the target position to all ${pendingGpsPlan.items.length} cluster image(s)?`
+    );
   } catch (error) {
     container.textContent = error.message;
   }
@@ -518,7 +530,7 @@ function cancelIndividualGpsMoves() {
   document.getElementById('gps-plan').textContent = 'Individual moves cancelled.';
 }
 
-async function previewIndividualGpsMoves() {
+async function applyIndividualGpsMoves() {
   const container = document.getElementById('gps-plan');
   const moves = movedPhotoMarkers().map(entry => ({
     path: entry.point.path,
@@ -532,8 +544,10 @@ async function previewIndividualGpsMoves() {
   try {
     const result = await api(`/api/runs/${encodeURIComponent(runId)}/clusters/${encodeURIComponent(clusterId)}/gps/preview`, {moves});
     pendingGpsPlan = result.plan;
-    const rows = pendingGpsPlan.items.map(item => `<li><code>${escapeHtml(item.path)}</code>: ${escapeHtml(item.before.latitude ?? 'no GPS')}, ${escapeHtml(item.before.longitude ?? 'no GPS')} → ${escapeHtml(item.after.latitude)}, ${escapeHtml(item.after.longitude)}</li>`).join('');
-    container.innerHTML = `<strong>${pendingGpsPlan.items.length} individual image(s) would move.</strong><ul>${rows}</ul><button class="primary" onclick="applyPlan('gps')">Apply previewed individual GPS</button>`;
+    await confirmAndApplyGpsPlan(
+      pendingGpsPlan,
+      `Apply ${pendingGpsPlan.items.length} individual image move(s)?`
+    );
   } catch (error) {
     container.textContent = error.message;
   }
@@ -592,8 +606,6 @@ function initResizers() {
   });
 }
 
-document.getElementById('latitude').addEventListener('change', moveTargetFromFields);
-document.getElementById('longitude').addEventListener('change', moveTargetFromFields);
 document.addEventListener('keydown', event => {
   if (event.ctrlKey && event.key === 'ArrowLeft') {
     event.preventDefault();

@@ -259,6 +259,50 @@ def cache_reference_image(
     return path
 
 
+def cache_city_images(
+    markers: Iterable[dict[str, Any]],
+    cache_directory: Path,
+    *,
+    session: requests.Session | None = None,
+    throttle: RequestThrottle | None = None,
+    progress: ProgressCallback | None = None,
+) -> dict[str, int]:
+    """Cache every available city marker image without failing the city run."""
+
+    downloadable = [
+        marker for marker in markers if marker.get("image_url")
+    ]
+    cached = 0
+    failed = 0
+    for index, marker in enumerate(downloadable, start=1):
+        if progress is not None:
+            progress(
+                "sac-city-images",
+                index,
+                len(downloadable),
+                f"Caching SAC city picture {index} of {len(downloadable)}",
+            )
+        try:
+            reference = cache_reference_image(
+                marker,
+                cache_directory,
+                session=session,
+                throttle=throttle,
+            )
+            marker["cached_image"] = str(reference) if reference else None
+            if reference:
+                cached += 1
+        except (requests.RequestException, OSError, ValueError) as exc:
+            marker["cached_image"] = None
+            marker["visual_error"] = str(exc)
+            failed += 1
+    return {
+        "available": len(downloadable),
+        "cached": cached,
+        "failed": failed,
+    }
+
+
 def compare_clusters(
     clusters: Iterable[PhotoCluster],
     city_payload: dict[str, Any],
@@ -321,11 +365,16 @@ def compare_clusters(
                         ),
                     )
                 try:
-                    reference = cache_reference_image(
-                        candidate,
-                        reference_cache,
-                        session=session,
-                        throttle=throttle,
+                    cached = candidate.get("cached_image")
+                    reference = (
+                        Path(str(cached))
+                        if cached and Path(str(cached)).is_file()
+                        else cache_reference_image(
+                            candidate,
+                            reference_cache,
+                            session=session,
+                            throttle=throttle,
+                        )
                     )
                     similarity = (
                         image_similarity(cluster.photos[0].path, reference)
