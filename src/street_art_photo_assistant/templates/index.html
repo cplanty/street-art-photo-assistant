@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Street Art Photo Assistant</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <main>
+    <h1>Street Art Photo Assistant</h1>
+    <p>Cluster, geotag, tag, and compare street-art photos.</p>
+    <section>
+      <h2>Configuration</h2>
+      <p><code>{{ config_path }}</code></p>
+      <p>{{ sources|length }} configured photo source(s).</p>
+    </section>
+  </main>
+</body>
+</html>
+

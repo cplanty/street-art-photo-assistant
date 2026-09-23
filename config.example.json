@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "auto_save": true,
+  "sources": [
+    {
+      "name": "Camera",
+      "path": "C:\\Photos\\Camera",
+      "enabled": true,
+      "gps_target": true,
+      "gps_reference": true
+    }
+  ],
+  "temporary_folder": "_tmp_photos",
+  "selection": {
+    "start": "",
+    "end": "",
+    "start_time": "",
+    "end_time": "",
+    "tagged_mode": "both",
+    "include_tags": [],
+    "exclude_tags": [],
+    "missing_gps": "include"
+  },
+  "clustering": {
+    "radius_m": 35,
+    "unknown_tag": "_unknown",
+    "wall_tag": "_wall",
+    "generic_tags": [
+      "StreetArt",
+      "Stickers"
+    ],
+    "context_only_tags": []
+  },
+  "gps_repair": {
+    "maximum_time_difference_seconds": 300
+  },
+  "matching": {
+    "street_art_cities_enabled": false,
+    "city": "",
+    "profile": "balanced",
+    "candidate_radius_m": 80
+  },
+  "paths": {
+    "artists": "data/artists.csv",
+    "runs": "_runs"
+  },
+  "read_only": false
+}
+

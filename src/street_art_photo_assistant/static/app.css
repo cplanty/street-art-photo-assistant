@@ -1,0 +1,29 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+  color: #1f2328;
+  background: #f6f8fa;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 900px;
+  margin: 48px auto;
+  padding: 0 24px;
+}
+
+section {
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+code {
+  overflow-wrap: anywhere;
+}
+

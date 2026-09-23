@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.coverage
+.pytest_cache/
+.venv/
+venv/
+build/
+dist/
+
+config.local.json
+_runs/
+_tmp_photos/
+data/cities/
+data/ref_images/
+
