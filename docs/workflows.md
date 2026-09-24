@@ -1,5 +1,18 @@
 # Workflows
 
+## Typical daily workflow
+
+1. Preview and repair missing GPS coordinates using trusted photos captured
+   around the same time.
+2. Run a first pass on untagged photos. Review nearby Street Art Cities markers
+   and use their evidence to identify and tag known artwork.
+3. Review every cluster with **Ctrl+Left/Right** for previous/next and **Tab**
+   to move between tag fields. Search by tag substring and use autocomplete
+   from `data/artists.csv` to apply recurring artist tags quickly.
+4. Run a second pass on the now-tagged photos to check whether the same artist
+   or artwork already exists on Street Art Cities. Copy the images selected for
+   publication to the temporary folder.
+
 ## Generate and review clusters
 
 1. Add and enable one or more photo sources.
