@@ -10,8 +10,9 @@
    to move between tag fields. Search by tag substring and use autocomplete
    from `data/artists.csv` to apply recurring artist tags quickly.
 4. Run a second pass on the now-tagged photos to check whether the same artist
-   or artwork already exists on Street Art Cities. Copy the images selected for
-   publication to the temporary folder.
+   or artwork already exists on Street Art Cities. Correct obvious GPS drift by
+   comparing positions with context photos or Street View, then copy the images
+   selected for publication to the temporary folder.
 
 ## Generate and review clusters
 
