@@ -97,6 +97,52 @@ These are review aids, not publication decisions. Removed marker status,
 distance, artist agreement, visual score, and image errors remain visible to
 the reviewer.
 
+## Known limitations
+
+The comparison produces review suggestions rather than definitive duplicate
+detection. An existing Street Art Cities artwork may not be identified for
+several reasons:
+
+- **Visual matching:** The lightweight ORB algorithm compares features across
+  the complete image; it does not isolate the artwork. Background details can
+  dominate the result, while changes in viewpoint, framing, light, obstruction,
+  deterioration, or repainting can reduce similarity. Similar surroundings can
+  also produce a misleading match.
+- **Search radius:** Only markers within `matching.candidate_radius_m` are
+  considered. Photo or marker GPS drift can exceed the default radius and has
+  been observed at roughly 200 metres. Increasing the radius can recover such
+  candidates but may introduce many unrelated markers in dense locations.
+- **City boundary:** Only the selected city's marker catalogue is loaded.
+  Nearby artwork associated with a neighbouring or unexpected city is not
+  considered.
+- **Missing or inaccurate coordinates:** A cluster without coordinates has no
+  candidates. Incorrect photo coordinates, marker coordinates, or a misleading
+  cluster centroid can move the search away from the artwork.
+- **Bounded candidates:** The selected profile limits visual comparison to the
+  first 4, 8, or 16 ranked nearby candidates. In a dense area, the correct
+  marker may fall outside that set.
+- **Single local image:** Visual matching uses only the cluster's first primary
+  photo. A context shot, poor angle, or obscured view can be less useful than
+  another photo in the cluster.
+- **Reference-image availability:** A marker may have no usable picture, or its
+  picture may fail validation or download. Cached pictures are keyed by marker
+  ID, so a picture replaced upstream remains stale until its cache entry is
+  removed.
+- **Artist mapping:** A missing or incorrect mapping between a local tag and
+  `data/artists.csv` can prevent the correct marker from receiving same-artist
+  priority.
+- **Local clustering:** Photos of one artwork can be split between clusters, or
+  unrelated photos can be grouped together, resulting in an unsuitable
+  representative image or centroid.
+- **Provider data:** The artwork may not yet have a Street Art Cities marker,
+  may not appear as an artwork in the selected city response, or may have
+  incomplete coordinates or image metadata.
+
+A nearby marker can still appear for manual review when visual comparison
+cannot confirm it. `likely-new` means only that no candidate was found within
+the selected city and configured radius; it does not prove that the artwork is
+absent from Street Art Cities.
+
 ## Caches and portability
 
 Both cache roots are configurable and ignored by Git by default. Delete a city
