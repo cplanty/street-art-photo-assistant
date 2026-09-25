@@ -205,6 +205,7 @@ def run_offline_clustering(
             cache_city_images,
             compare_clusters,
             refresh_city,
+            refresh_city_api,
         )
 
         city = str(matching.get("city") or "").strip().lower()
@@ -212,19 +213,37 @@ def run_offline_clustering(
         throttle = RequestThrottle(
             float(matching["request_interval_seconds"])
         )
+        marker_source = str(
+            matching.get("marker_source") or "public-city-endpoint"
+        )
         progress.update(
             stage="sac-refresh",
             percent=55,
             message=(
-                f"Refreshing Street Art Cities markers for {city} "
+                f"Refreshing Street Art Cities markers for {city} via "
+                f"{marker_source} "
                 f"with User-Agent: {USER_AGENT}"
             ),
         )
-        city_payload = refresh_city(
-            city,
-            _resolve(config_root, paths["city_cache"]),
-            throttle=throttle,
-        )
+        if marker_source == "oauth-markers-api":
+            access_token = os.environ.get("SAC_API_ACCESS_TOKEN", "")
+            if not access_token:
+                raise RuntimeError(
+                    "Connect the Street Art Cities API before using "
+                    "the authenticated marker source"
+                )
+            city_payload = refresh_city_api(
+                city,
+                _resolve(config_root, paths["city_cache"]),
+                access_token=access_token,
+                throttle=throttle,
+            )
+        else:
+            city_payload = refresh_city(
+                city,
+                _resolve(config_root, paths["city_cache"]),
+                throttle=throttle,
+            )
         marker_count = len(city_payload["markers"])
         marker_warning = None
         if marker_count >= int(
@@ -232,7 +251,7 @@ def run_offline_clustering(
         ):
             marker_warning = (
                 f"Large city catalogue: {marker_count} markers were returned "
-                "in the complete city response; local comparison may take time."
+                "by the selected marker source; local comparison may take time."
             )
         progress.update(
             stage="sac-matching",

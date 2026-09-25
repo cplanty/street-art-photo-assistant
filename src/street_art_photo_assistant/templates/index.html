@@ -68,7 +68,40 @@
         </label>
         <label>City slug <input id="city" list="cached-cities" placeholder="for example: orleans"></label>
         <datalist id="cached-cities">{% for city in cached_cities %}<option value="{{ city }}">{% endfor %}</datalist>
+        <label>Marker source
+          <select id="marker_source">
+            <option value="public-city-endpoint">Public city snapshot (established)</option>
+            <option value="oauth-markers-api">OAuth Markers API (new)</option>
+          </select>
+        </label>
         <p class="muted">Leave matching disabled for a completely offline cluster report.</p>
+        <div class="subsection">
+          <h3>API test</h3>
+          <label>OAuth client ID
+            <input id="sac_api_client_id" placeholder="sac_client_…">
+          </label>
+          <p class="muted">Uses PKCE with the registered redirect URL <code>http://127.0.0.1:8787/login</code>. Tokens remain in memory only.</p>
+          <p>
+            <strong>Status:</strong>
+            {% if sac_api_connected %}
+              connected with <code>{{ sac_api_scopes|join(' ') }}</code>
+            {% else %}
+              not connected
+            {% endif %}
+          </p>
+          {% if sac_api_connected and 'markers:read' not in sac_api_scopes %}
+            <p class="error">Reconnect to grant the required <code>markers:read</code> scope.</p>
+          {% endif %}
+          <div class="button-row">
+            <a class="button primary" href="{{ url_for('sac_login') }}" onclick="connectSacApi(event)">
+              {% if sac_api_connected %}Authorize again{% else %}Connect API{% endif %}
+            </a>
+            {% if sac_api_connected %}
+              <a class="button" href="{{ url_for('sac_collections') }}">Test collections request</a>
+              <button type="button" onclick="disconnectSacApi()">Disconnect local session</button>
+            {% endif %}
+          </div>
+        </div>
         <label class="check">
           <input id="download_images" type="checkbox">
           Cache all SAC city pictures
@@ -204,7 +237,7 @@ let config = {{ config|tojson }};
 let previewToken = null;
 let gpsPlanId = null;
 let autosaveTimer = null;
-let currentRun = null;
+let currentRun = {{ active_run_id|tojson }};
 
 const byId = id => document.getElementById(id);
 const lines = id => byId(id).value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
@@ -309,6 +342,8 @@ function readForm() {
   config.gps_repair.maximum_time_difference_seconds = Number(byId('gps_threshold').value);
   Object.assign(config.matching, {
     street_art_cities_enabled: byId('sac_enabled').checked,
+    api_client_id: byId('sac_api_client_id').value.trim(),
+    marker_source: byId('marker_source').value,
     city: byId('city').value.trim(),
     visual_enabled: byId('visual_enabled').checked,
     download_images: byId('download_images').checked,
@@ -328,6 +363,8 @@ function writeForm() {
   byId('exclude_tags').value = (config.selection.exclude_tags || []).join('\n');
   byId('gps_threshold').value = config.gps_repair.maximum_time_difference_seconds || 300;
   byId('sac_enabled').checked = !!config.matching.street_art_cities_enabled;
+  byId('sac_api_client_id').value = config.matching.api_client_id || '';
+  byId('marker_source').value = config.matching.marker_source || 'public-city-endpoint';
   byId('city').value = config.matching.city || '';
   byId('visual_enabled').checked = !!config.matching.visual_enabled;
   byId('download_images').checked = !!config.matching.download_images;
@@ -388,6 +425,30 @@ async function saveConfiguration(quiet) {
     byId('config-message').textContent = quiet ? 'Auto-saved.' : 'Configuration saved.';
   } catch (error) {
     byId('config-message').textContent = `Not saved: ${error.message}`;
+  }
+}
+
+async function connectSacApi(event) {
+  event.preventDefault();
+  const loginUrl = event.currentTarget.href;
+  readForm();
+  try {
+    await api('/api/config', {
+      method: 'POST',
+      body: JSON.stringify(config)
+    });
+    window.location.assign(loginUrl);
+  } catch (error) {
+    byId('config-message').textContent = `Not saved: ${error.message}`;
+  }
+}
+
+async function disconnectSacApi() {
+  try {
+    await api('/api/sac/disconnect', {method: 'POST', body: '{}'});
+    location.reload();
+  } catch (error) {
+    byId('config-message').textContent = error.message;
   }
 }
 
@@ -546,6 +607,7 @@ async function pollRun() {
     }
   } catch (error) {
     byId('run-message').textContent = error.message;
+    if (currentRun) setTimeout(pollRun, 10000);
   }
 }
 
@@ -602,6 +664,12 @@ byId('run_label').addEventListener('input', () => {
 byId('auto_save').addEventListener('change', () => saveConfiguration(false));
 writeForm();
 renderSources();
+if (currentRun) {
+  byId('run-progress-panel').hidden = false;
+  byId('run-cancel-button').disabled = false;
+  byId('run-message').textContent = 'Restoring active run…';
+  pollRun();
+}
 </script>
 </body>
 </html>

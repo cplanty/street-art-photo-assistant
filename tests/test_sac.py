@@ -1,9 +1,12 @@
 import json
 import tempfile
 import unittest
+from base64 import urlsafe_b64decode
+from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import Mock, patch
+from urllib.parse import parse_qs, urlparse
 
 from PIL import Image
 
@@ -15,8 +18,13 @@ from street_art_photo_assistant.sac import (
     cache_reference_image,
     cached_cities,
     compare_clusters,
+    create_pkce_pair,
+    exchange_pkce_code,
+    fetch_collections,
     nearby_candidates,
+    oauth_authorization_url,
     refresh_city,
+    refresh_city_api,
 )
 
 
@@ -55,6 +63,56 @@ class SACTests(unittest.TestCase):
             "images": [{"url": "https://images.example.test/reference.jpg"}],
         }
 
+    def test_pkce_authorization_and_authenticated_first_request(self):
+        verifier, challenge = create_pkce_pair()
+        padded = challenge + "=" * (-len(challenge) % 4)
+        self.assertGreaterEqual(len(verifier), 43)
+        self.assertLessEqual(len(verifier), 128)
+        self.assertEqual(
+            sha256(verifier.encode("ascii")).digest(),
+            urlsafe_b64decode(padded),
+        )
+        url = oauth_authorization_url(
+            client_id="sac_client_test",
+            redirect_uri="http://127.0.0.1:8787/login",
+            scope="collections:read",
+            state="state-value",
+            code_challenge=challenge,
+        )
+        query = parse_qs(urlparse(url).query)
+        self.assertEqual(["code"], query["response_type"])
+        self.assertEqual(["S256"], query["code_challenge_method"])
+        self.assertEqual(["collections:read"], query["scope"])
+
+        session = Mock()
+        session.post.return_value = FakeResponse({
+            "access_token": "test-access-token",
+            "token_type": "Bearer",
+            "expires_in": 3600,
+            "scope": "collections:read",
+        })
+        token = exchange_pkce_code(
+            client_id="sac_client_test",
+            redirect_uri="http://127.0.0.1:8787/login",
+            code="one-use-code",
+            code_verifier=verifier,
+            session=session,
+        )
+        self.assertEqual("test-access-token", token["access_token"])
+        token_request = session.post.call_args.kwargs
+        self.assertEqual(verifier, token_request["json"]["code_verifier"])
+        self.assertNotIn("client_secret", token_request["json"])
+
+        session.get.return_value = FakeResponse([{"id": "collection-1"}])
+        collections = fetch_collections(
+            token["access_token"], session=session
+        )
+        self.assertEqual([{"id": "collection-1"}], collections)
+        self.assertEqual(
+            "Bearer test-access-token",
+            session.get.call_args.kwargs["headers"]["Authorization"],
+        )
+
     def test_refresh_normalizes_and_caches_all_artwork_statuses(self):
         removed = {**self.marker_item(), "id": "marker-2", "status": "removed"}
         session = Mock()
@@ -84,6 +142,60 @@ class SACTests(unittest.TestCase):
             USER_AGENT,
             session.get.call_args.kwargs["headers"]["User-Agent"],
         )
+
+    def test_authenticated_marker_refresh_paginates_and_keeps_all_statuses(self):
+        first = {
+            **self.marker_item(),
+            "siteId": "test-city",
+            "images": [],
+            "artists": [],
+            "thumbnail": "https://images.example.test/thumb-1.jpg",
+        }
+        second = {
+            **first,
+            "id": "marker-2",
+            "status": "removed",
+            "thumbnail": "https://images.example.test/thumb-2.jpg",
+        }
+        session = Mock()
+        session.get.side_effect = [
+            FakeResponse({
+                "items": [first],
+                "page": 1,
+                "perPage": 100,
+                "total": 2,
+            }),
+            FakeResponse({
+                "items": [second],
+                "page": 2,
+                "perPage": 100,
+                "total": 2,
+            }),
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            payload = refresh_city_api(
+                "test-city",
+                Path(temporary),
+                access_token="test-access-token",
+                session=session,
+            )
+
+        self.assertEqual("oauth-markers-api", payload["source"])
+        self.assertEqual(["active", "removed"], [
+            marker["status"] for marker in payload["markers"]
+        ])
+        self.assertEqual(
+            "https://images.example.test/thumb-1.jpg",
+            payload["markers"][0]["image_url"],
+        )
+        self.assertEqual(2, session.get.call_count)
+        for call in session.get.call_args_list:
+            self.assertEqual("all", call.kwargs["params"]["status"])
+            self.assertEqual("artwork", call.kwargs["params"]["type"])
+            self.assertEqual(
+                "Bearer test-access-token",
+                call.kwargs["headers"]["Authorization"],
+            )
 
     def test_nearby_candidates_rank_same_artist_first(self):
         cluster = PhotoCluster(
@@ -115,6 +227,34 @@ class SACTests(unittest.TestCase):
             candidate["marker_id"] for candidate in candidates
         ])
         self.assertTrue(candidates[0]["tag_match"])
+
+    def test_api_artist_display_name_can_prioritize_candidate(self):
+        cluster = PhotoCluster(
+            id="cluster",
+            tag="Public Artist",
+            latitude=48.0,
+            longitude=2.0,
+        )
+        candidates = nearby_candidates(
+            cluster,
+            [{
+                "marker_id": "other",
+                "latitude": 48.00001,
+                "longitude": 2.0,
+                "artist": "Other Artist",
+            }, {
+                "marker_id": "same",
+                "latitude": 48.00002,
+                "longitude": 2.0,
+                "artist": "Public Artist, Collaborator",
+            }],
+            radius_m=100,
+            artist_tag=cluster.tag,
+        )
+
+        self.assertEqual(["same", "other"], [
+            candidate["marker_id"] for candidate in candidates
+        ])
 
     def test_comparison_without_visual_matching_makes_no_image_request(self):
         cluster = PhotoCluster(

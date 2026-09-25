@@ -6,6 +6,7 @@ from copy import deepcopy
 from pathlib import Path
 from shutil import copy2
 from unittest.mock import Mock, patch
+from urllib.parse import parse_qs, urlparse
 
 from street_art_photo_assistant.config import DEFAULT_CONFIG
 from street_art_photo_assistant.photos import read_photo
@@ -75,6 +76,15 @@ class WebTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         page = response.get_data(as_text=True)
         self.assertIn("Street Art Cities matching", page)
+        self.assertIn("Public city snapshot (established)", page)
+        self.assertIn("OAuth Markers API (new)", page)
+        self.assertIn('href="/login"', page)
+        self.assertIn("not connected", page)
+        self.assertIn(
+            "const loginUrl = event.currentTarget.href;",
+            page,
+        )
+        self.assertIn("window.location.assign(loginUrl);", page)
         self.assertIn("Visual matching", page)
         self.assertIn("Cache all SAC city pictures", page)
         self.assertIn("Configuration", page)
@@ -95,6 +105,30 @@ class WebTests(unittest.TestCase):
         )
         self.assertNotIn('id="temporary_folder" readonly', page)
         self.assertNotIn('readonly placeholder="Choose a folder"', page)
+
+    def test_generator_restores_newest_active_run_after_refresh(self):
+        with patch.object(
+            self.manager,
+            "list_runs",
+            return_value=[{
+                "id": "newest-running",
+                "label": "",
+                "status": "running",
+                "selected_photos": None,
+                "clusters": None,
+            }, {
+                "id": "older-running",
+                "label": "",
+                "status": "running",
+                "selected_photos": None,
+                "clusters": None,
+            }],
+        ):
+            page = self.client.get("/").get_data(as_text=True)
+
+        self.assertIn('let currentRun = "newest-running";', page)
+        self.assertIn("Restoring active run", page)
+        self.assertIn("if (currentRun)", page)
 
     def test_generates_local_redacted_diagnostic_bundle(self):
         response = self.client.post(
@@ -119,6 +153,113 @@ class WebTests(unittest.TestCase):
             '<option value="test-city">',
             response.get_data(as_text=True),
         )
+
+    def test_pkce_login_callback_and_collections_probe(self):
+        self.config["matching"]["api_client_id"] = "sac_client_test"
+        saved = self.client.post("/api/config", json=self.config)
+        self.assertEqual(200, saved.status_code)
+
+        started = self.client.get("/login")
+        self.assertEqual(302, started.status_code)
+        authorization = urlparse(started.headers["Location"])
+        query = parse_qs(authorization.query)
+        self.assertEqual("streetartcities.com", authorization.netloc)
+        self.assertEqual(
+            ["collections:read markers:read"], query["scope"]
+        )
+        self.assertEqual(["S256"], query["code_challenge_method"])
+
+        with patch(
+            "street_art_photo_assistant.web.exchange_pkce_code",
+            return_value={
+                "access_token": "test-access-token",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "scope": "collections:read markers:read",
+            },
+        ) as exchange:
+            callback = self.client.get("/login", query_string={
+                "code": "one-use-code",
+                "state": query["state"][0],
+            })
+        self.assertEqual(200, callback.status_code)
+        self.assertIn("Connected.", callback.get_data(as_text=True))
+        exchange.assert_called_once()
+        self.assertNotIn(
+            "test-access-token", callback.get_data(as_text=True)
+        )
+        home = self.client.get("/").get_data(as_text=True)
+        self.assertIn(
+            "connected with <code>collections:read markers:read</code>",
+            home,
+        )
+        self.assertIn("Disconnect local session", home)
+        self.assertIn("Authorize again", home)
+
+        with patch(
+            "street_art_photo_assistant.web.fetch_collections",
+            return_value=[{"id": "collection-1"}],
+        ) as fetch:
+            response = self.client.get("/api/sac/collections")
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(
+            [{"id": "collection-1"}],
+            response.get_json()["collections"],
+        )
+        fetch.assert_called_once_with("test-access-token")
+
+        api_config = deepcopy(self.config)
+        api_config["matching"]["street_art_cities_enabled"] = True
+        api_config["matching"]["marker_source"] = "oauth-markers-api"
+        api_config["matching"]["city"] = "test-city"
+        self.client.post("/api/config", json=api_config)
+        preview = self.client.post(
+            "/api/preview", json=api_config
+        ).get_json()
+        with patch.object(
+            self.manager,
+            "start",
+            return_value={"id": "test-run", "status": "queued"},
+        ) as start:
+            started = self.client.post("/api/runs", json={
+                "config": api_config,
+                "preview_token": preview["token"],
+            })
+        self.assertEqual(200, started.status_code)
+        self.assertEqual(
+            {"SAC_API_ACCESS_TOKEN": "test-access-token"},
+            start.call_args.kwargs["environment"],
+        )
+
+        disconnected = self.client.post("/api/sac/disconnect", json={})
+        self.assertEqual(200, disconnected.status_code)
+        self.assertEqual(
+            401, self.client.get("/api/sac/collections").status_code
+        )
+
+    def test_pkce_callback_rejects_unknown_state(self):
+        response = self.client.get("/login", query_string={
+            "code": "one-use-code",
+            "state": "unknown",
+        })
+
+        self.assertEqual(400, response.status_code)
+        self.assertIn("state", response.get_data(as_text=True))
+
+    def test_authenticated_marker_run_requires_connection(self):
+        config = deepcopy(self.config)
+        config["matching"]["street_art_cities_enabled"] = True
+        config["matching"]["marker_source"] = "oauth-markers-api"
+        config["matching"]["city"] = "test-city"
+        preview = self.client.post("/api/preview", json=config).get_json()
+
+        response = self.client.post("/api/runs", json={
+            "config": config,
+            "preview_token": preview["token"],
+        })
+
+        self.assertEqual(400, response.status_code)
+        self.assertIn("Connect", response.get_json()["error"])
 
     def test_reference_route_is_confined_to_configured_cache(self):
         cache = self.root / "data" / "ref_images"

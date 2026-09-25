@@ -38,9 +38,9 @@ path and similarity, and any explicit reference-image error.
 ## Street Art Cities city cache
 
 `data/cities/<slug>.json` contains the cache format version, city slug, refresh
-time, and normalized artwork markers. Marker status is preserved, including
-removed markers, so the report can explain rather than silently discard nearby
-historical entries.
+time, source (`public-city-endpoint` or `oauth-markers-api`), and normalized
+artwork markers. Marker status is preserved, including removed markers, so the
+report can explain rather than silently discard nearby historical entries.
 
 ## GPS repair plan
 

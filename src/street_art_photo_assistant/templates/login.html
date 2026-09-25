@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Street Art Cities API</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+<main>
+  <section class="card">
+    <h1>Street Art Cities API</h1>
+    {% if connected %}
+      <p><strong>Connected.</strong> The access token is held in memory and will be discarded when the application stops.</p>
+      <div class="button-row">
+        <a class="button primary" href="{{ url_for('sac_collections') }}">Test collections request</a>
+        <a class="button" href="{{ url_for('index') }}">Back to the application</a>
+      </div>
+    {% else %}
+      <p class="error">{{ error }}</p>
+      <a class="button" href="{{ url_for('index') }}">Back to the application</a>
+    {% endif %}
+  </section>
+</main>
+</body>
+</html>

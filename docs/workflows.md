@@ -31,8 +31,9 @@ action. Disabled actions are grey.
 
 Generate displays the persisted stage, percentage, item count, warnings, and a
 bounded live log tail. Progress survives a page refresh because each run writes
-`progress.json`. On completion, the new report is inserted into **Recent runs**
-without requiring a page reload.
+`progress.json`. After a page refresh, the generator restores and resumes
+polling the newest queued or running run. On completion, the new report is
+inserted into **Recent runs** without requiring a page reload.
 
 The adjacent **Cancel** button is enabled only while the current Generate run
 is queued or running. Cancellation terminates that run and preserves its
