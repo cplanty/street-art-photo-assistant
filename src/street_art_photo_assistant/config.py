@@ -37,6 +37,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "gps_repair": {"maximum_time_difference_seconds": 300},
     "matching": {
         "street_art_cities_enabled": False,
+        "api_client_id": "sac_client_I8omQFZFpgwmQq8D",
+        "marker_source": "public-city-endpoint",
         "city": "",
         "visual_enabled": False,
         "download_images": False,
@@ -102,6 +104,10 @@ def validate_config(config: dict[str, Any]) -> None:
         "quick", "balanced", "thorough"
     }:
         raise ValueError("matching.profile is invalid")
+    if config["matching"]["marker_source"] not in {
+        "public-city-endpoint", "oauth-markers-api"
+    }:
+        raise ValueError("matching.marker_source is invalid")
     if float(config["matching"]["request_interval_seconds"]) < 0:
         raise ValueError("matching.request_interval_seconds cannot be negative")
     if int(config["matching"]["large_city_warning_markers"]) <= 0:

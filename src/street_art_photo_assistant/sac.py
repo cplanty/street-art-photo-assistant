@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import base64
 import csv
+import hashlib
 import json
 import os
 import re
+import secrets
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlencode, urljoin, urlparse
 
 import requests
 from PIL import Image
@@ -23,6 +26,10 @@ from .models import PhotoCluster
 
 BASE_URL = "https://streetartcities.com"
 MARKERS_URL = BASE_URL + "/data/cities/{city}/markers.json"
+OAUTH_AUTHORIZE_URL = BASE_URL + "/api/oauth/authorize"
+OAUTH_TOKEN_URL = BASE_URL + "/api/oauth/token"
+COLLECTIONS_URL = BASE_URL + "/api/collections"
+MARKERS_SEARCH_URL = BASE_URL + "/api/markers/search"
 CITY_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 USER_AGENT = (
     f"StreetArtPhotoAssistant/{__version__} "
@@ -30,6 +37,195 @@ USER_AGENT = (
 )
 PROFILE_LIMITS = {"quick": 4, "balanced": 8, "thorough": 16}
 ProgressCallback = Callable[[str, int, int, str], None]
+
+
+def create_pkce_pair() -> tuple[str, str]:
+    """Create one RFC 7636 verifier and S256 challenge."""
+
+    verifier = secrets.token_urlsafe(64)
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return verifier, challenge
+
+
+def oauth_authorization_url(
+    *,
+    client_id: str,
+    redirect_uri: str,
+    scope: str,
+    state: str,
+    code_challenge: str,
+) -> str:
+    """Build the SAC public-client authorization URL."""
+
+    if not all((client_id, redirect_uri, scope, state, code_challenge)):
+        raise ValueError("Complete OAuth authorization parameters are required")
+    return OAUTH_AUTHORIZE_URL + "?" + urlencode({
+        "response_type": "code",
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "scope": scope,
+        "state": state,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+    })
+
+
+def exchange_pkce_code(
+    *,
+    client_id: str,
+    redirect_uri: str,
+    code: str,
+    code_verifier: str,
+    timeout_seconds: int = 30,
+    session: requests.Session | None = None,
+) -> dict[str, Any]:
+    """Exchange one authorization code without using a client secret."""
+
+    client = session or requests.Session()
+    try:
+        response = client.post(
+            OAUTH_TOKEN_URL,
+            json={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "code_verifier": code_verifier,
+            },
+            headers={"User-Agent": USER_AGENT},
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"Street Art Cities token exchange failed: {exc}"
+        ) from exc
+    if not isinstance(payload, dict) or not str(payload.get("access_token") or ""):
+        raise ValueError("Street Art Cities returned no access token")
+    if str(payload.get("token_type") or "Bearer").casefold() != "bearer":
+        raise ValueError("Street Art Cities returned an unsupported token type")
+    return payload
+
+
+def fetch_collections(
+    access_token: str,
+    *,
+    timeout_seconds: int = 30,
+    session: requests.Session | None = None,
+) -> Any:
+    """Make the documented first authenticated API request."""
+
+    if not access_token:
+        raise ValueError("A Street Art Cities access token is required")
+    client = session or requests.Session()
+    try:
+        response = client.get(
+            COLLECTIONS_URL,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "User-Agent": USER_AGENT,
+            },
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"Street Art Cities collections request failed: {exc}"
+        ) from exc
+
+
+def refresh_city_api(
+    city: str,
+    cache_directory: Path,
+    *,
+    access_token: str,
+    timeout_seconds: int = 30,
+    session: requests.Session | None = None,
+    throttle: RequestThrottle | None = None,
+) -> dict[str, Any]:
+    """Refresh one city through the authenticated paginated Markers API."""
+
+    city = city.strip().lower()
+    if not CITY_RE.fullmatch(city):
+        raise ValueError("City must be a lowercase slug")
+    if not access_token:
+        raise ValueError("A Street Art Cities access token is required")
+    client = session or requests.Session()
+    markers: list[dict[str, Any]] = []
+    page = 1
+    total: int | None = None
+    while total is None or len(markers) < total:
+        if page > 100:
+            raise ValueError(
+                "Street Art Cities marker search exceeds 10,000 results"
+            )
+        if throttle is not None:
+            throttle.wait()
+        try:
+            response = client.get(
+                MARKERS_SEARCH_URL,
+                params={
+                    "city": city,
+                    "type": "artwork",
+                    "status": "all",
+                    "page": page,
+                    "perPage": 100,
+                },
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "User-Agent": USER_AGENT,
+                },
+                timeout=timeout_seconds,
+            )
+            response.raise_for_status()
+            raw = response.json()
+        except requests.RequestException as exc:
+            raise RuntimeError(
+                f"Street Art Cities marker search failed: {exc}"
+            ) from exc
+        if not isinstance(raw, dict) or not isinstance(raw.get("items"), list):
+            raise ValueError(
+                "Street Art Cities marker search returned no items list"
+            )
+        try:
+            response_total = int(raw["total"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "Street Art Cities marker search returned no valid total"
+            ) from exc
+        if total is None:
+            total = response_total
+        elif total != response_total:
+            raise ValueError(
+                "Street Art Cities marker total changed during pagination"
+            )
+        items = [
+            _normalize_marker(item)
+            for item in raw["items"]
+            if isinstance(item, dict)
+            and item.get("type") == "artwork"
+            and item.get("id")
+        ]
+        markers.extend(items)
+        if not raw["items"]:
+            if len(markers) < total:
+                raise ValueError(
+                    "Street Art Cities marker pagination ended early"
+                )
+            break
+        page += 1
+    payload = {
+        "version": 1,
+        "city": city,
+        "source": "oauth-markers-api",
+        "refreshed_at": datetime.now(timezone.utc).isoformat(),
+        "markers": markers,
+    }
+    _atomic_json(cache_directory / f"{city}.json", payload)
+    return payload
 
 
 @dataclass
@@ -127,6 +323,7 @@ def refresh_city(
     payload = {
         "version": 1,
         "city": city,
+        "source": "public-city-endpoint",
         "refreshed_at": datetime.now(timezone.utc).isoformat(),
         "markers": markers,
     }
@@ -165,6 +362,7 @@ def nearby_candidates(
     *,
     radius_m: float,
     artist_slug: str = "",
+    artist_tag: str = "",
 ) -> list[dict[str, Any]]:
     """Return nearby marker evidence without downloading images."""
 
@@ -183,12 +381,23 @@ def nearby_candidates(
             float(longitude),
         )
         if distance <= radius_m:
+            artist_names = {
+                name.strip().casefold()
+                for name in str(marker.get("artist") or "").split(",")
+                if name.strip()
+            }
             candidates.append({
                 **marker,
                 "distance_m": round(distance, 1),
                 "tag_match": bool(
-                    artist_slug
-                    and marker.get("artist_slug") == artist_slug
+                    (
+                        artist_slug
+                        and marker.get("artist_slug") == artist_slug
+                    )
+                    or (
+                        artist_tag
+                        and artist_tag.casefold() in artist_names
+                    )
                 ),
             })
     return sorted(
@@ -331,6 +540,7 @@ def compare_clusters(
             markers,
             radius_m=candidate_radius_m,
             artist_slug=slug,
+            artist_tag=cluster.tag,
         )[:PROFILE_LIMITS[profile]]
         prepared.append((cluster, slug, candidates))
         if progress is not None:
@@ -407,6 +617,9 @@ def compare_clusters(
             recommendation = "No nearby Street Art Cities marker found"
         results[cluster.id] = {
             "city": city_payload["city"],
+            "marker_source": city_payload.get(
+                "source", "public-city-endpoint"
+            ),
             "status": status,
             "recommendation": recommendation,
             "artist_slug": slug or None,

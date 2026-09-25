@@ -70,6 +70,7 @@ class RunManager:
         config: dict[str, Any],
         *,
         visual: bool = False,
+        environment: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         now = datetime.now(timezone.utc)
         identifier = uuid.uuid4().hex[:8]
@@ -123,14 +124,19 @@ class RunManager:
         self._write_manifest(manifest)
         thread = threading.Thread(
             target=self._execute,
-            args=(run_id, command),
+            args=(run_id, command, environment or {}),
             daemon=True,
             name=f"photo-run-{run_id}",
         )
         thread.start()
         return manifest
 
-    def _execute(self, run_id: str, command: list[str]) -> None:
+    def _execute(
+        self,
+        run_id: str,
+        command: list[str],
+        environment: dict[str, str],
+    ) -> None:
         with self._lock:
             if run_id in self._cancelled:
                 self._cancelled.discard(run_id)
@@ -148,6 +154,7 @@ class RunManager:
                 process = subprocess.Popen(
                     command,
                     cwd=self._run_path(run_id),
+                    env={**os.environ, **environment},
                     stdin=subprocess.DEVNULL,
                     stdout=log,
                     stderr=subprocess.STDOUT,

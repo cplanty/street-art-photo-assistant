@@ -31,6 +31,12 @@ apply endpoints while keeping preview and reports available.
 - `clustering.radius_m` controls geographic grouping.
 - `gps_repair.maximum_time_difference_seconds` limits reference transfer.
 - `matching.candidate_radius_m` limits nearby Street Art Cities candidates.
+- `matching.api_client_id` is the bundled, non-secret identifier for the
+  optional local PKCE API test. Forks can override it for another registered
+  app. OAuth tokens and verifiers are never persisted.
+- `matching.marker_source` selects the established `public-city-endpoint` or
+  the authenticated, paginated `oauth-markers-api`. The public source remains
+  the default because its city snapshot contains richer artist/image fields.
 - `matching.profile` limits candidates per cluster to 4 (`quick`), 8
   (`balanced`), or 16 (`thorough`).
 - `matching.request_interval_seconds` is the minimum delay between SAC

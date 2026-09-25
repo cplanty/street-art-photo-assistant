@@ -37,6 +37,8 @@
   },
   "matching": {
     "street_art_cities_enabled": false,
+    "api_client_id": "sac_client_I8omQFZFpgwmQq8D",
+    "marker_source": "public-city-endpoint",
     "city": "",
     "visual_enabled": false,
     "download_images": false,

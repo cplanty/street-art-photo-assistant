@@ -14,6 +14,12 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual("_unknown", config["clustering"]["unknown_tag"])
         self.assertEqual("_wall", config["clustering"]["wall_tag"])
         self.assertFalse(config["matching"]["street_art_cities_enabled"])
+        self.assertTrue(
+            config["matching"]["api_client_id"].startswith("sac_client_")
+        )
+        self.assertEqual(
+            "public-city-endpoint", config["matching"]["marker_source"]
+        )
         self.assertFalse(config["matching"]["download_images"])
         self.assertEqual([], config["selection"]["exclude_tags"])
 
@@ -62,6 +68,16 @@ class ConfigTests(unittest.TestCase):
                 "matching": {"request_interval_seconds": -1},
             }), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "cannot be negative"):
+                load_config(path)
+
+    def test_unknown_marker_source_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "config.local.json"
+            path.write_text(json.dumps({
+                "version": 1,
+                "matching": {"marker_source": "unknown"},
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "marker_source"):
                 load_config(path)
 
 

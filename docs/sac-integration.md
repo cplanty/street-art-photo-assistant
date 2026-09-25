@@ -4,10 +4,71 @@ Street Art Photo Assistant is an independent community project. It is not
 affiliated with or endorsed by Street Art Cities, and it never publishes or
 modifies Street Art Cities content.
 
+## OAuth API test
+
+The local web application can exercise the documented OAuth API flow without a
+client secret. Register `http://127.0.0.1:8787/login` as the PKCE redirect URL,
+enter the app's non-secret client ID in **Street Art Cities matching → API
+test**, and select **Connect API**. After consent, the callback validates the
+OAuth state and exchanges the one-use code with its PKCE verifier.
+
+The test requests `collections:read` for **Test collections request** and
+`markers:read` for the authenticated marker source. The collections probe calls
+`GET https://streetartcities.com/api/collections` with the resulting bearer
+token. OAuth state, PKCE verifiers, and access tokens remain in process memory;
+they are not written to configuration, logs, runs, or caches and are discarded
+when the local application stops. The client ID is stored as
+`matching.api_client_id` in the local configuration.
+
+After adding or changing requested scopes, restart the updated local
+application and use the **API test** controls on
+`http://127.0.0.1:8787/`:
+
+1. Select **Disconnect local session** to discard the current in-memory token.
+2. Select **Connect API**. This link opens `/login`, starts a fresh PKCE flow,
+   and requests both `collections:read` and `markers:read`.
+3. Allow the requested access on Street Art Cities. The callback returns to
+   `/login`; then return to the home page and confirm that both scopes appear in
+   the connection status.
+
+**Authorize again** can also start a fresh authorization without first
+disconnecting. Disconnecting is local because this test flow deliberately does
+not persist a refresh token; the discarded access token expires within one
+hour.
+
+An OAuth client ID is a public identifier, not a client secret. It can be
+distributed with a desktop application when every installation is intended to
+use the same registered SAC app and redirect URL. It identifies this
+application registration—not every SAC API application—and controls the name,
+permissions, and redirect URLs shown during authorization.
+
+## Marker sources
+
+`matching.marker_source` keeps both discovery methods available:
+
+- `public-city-endpoint` (default) downloads the established complete city
+  snapshot in one unauthenticated request. It includes artist IDs/slugs and
+  full image metadata used by the existing ranking and evidence pipeline.
+- `oauth-markers-api` requests all artwork statuses from
+  `GET /api/markers/search`, 100 results per page, using the in-memory
+  `markers:read` token. The token is passed to the clustering subprocess only
+  through its environment and is not included in the run command, manifest, or
+  configuration snapshot.
+
+The Markers API search response is not field-equivalent to the city snapshot.
+It provides a thumbnail and artist display text, but not full image metadata,
+artist IDs/slugs, or attributes. API-sourced runs therefore use the thumbnail
+for visual evidence and can prioritize an artist only when its display name
+matches the local tag. Artist-page links and slug-based matching may be absent.
+The API is paginated, requires a current one-hour access token, and currently
+supports at most 10,000 results through its documented page range. These gaps
+are why the public city snapshot remains the default while the API matures.
+
 ## Network behavior
 
 Street Art Cities matching is disabled by default. When enabled for a city
-slug, one request refreshes the complete public marker endpoint:
+slug with the default marker source, one request refreshes the complete public
+marker endpoint:
 
 ```text
 https://streetartcities.com/data/cities/<slug>/markers.json

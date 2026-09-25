@@ -29,6 +29,10 @@ affiliated with or endorsed by Street Art Cities.
   independent coordinates before previewing the write.
 - Optionally refresh a complete Street Art Cities city marker set and compare
   nearby candidates by artist, GPS, and local OpenCV evidence.
+- Test the Street Art Cities OAuth API locally with authorization-code PKCE and
+  in-memory `collections:read` and `markers:read` scopes.
+- Select either the established public city snapshot or the authenticated,
+  paginated Markers API while the newer API path is evaluated.
 - Optionally cache all available SAC marker pictures for evidence and map
   thumbnails; this is disabled by default.
 - Inspect exact tag/GPS plans before applying them from cluster detail pages.

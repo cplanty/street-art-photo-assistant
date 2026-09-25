@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import subprocess
 import threading
 import time
@@ -42,8 +43,18 @@ from .metadata import apply_tag_edit_plan, build_tag_edit_plan
 from .models import PhotoRecord
 from .photos import read_photo
 from .runs import RunManager
-from .sac import cached_cities
+from .sac import (
+    cached_cities,
+    create_pkce_pair,
+    exchange_pkce_code,
+    fetch_collections,
+    oauth_authorization_url,
+)
 from .workflow import scan_and_select, sources_from_config
+
+SAC_OAUTH_REDIRECT_URI = "http://127.0.0.1:8787/login"
+SAC_OAUTH_SCOPE = "collections:read markers:read"
+SAC_OAUTH_PENDING_SECONDS = 600
 
 
 def _signature(config: dict[str, Any]) -> str:
@@ -226,6 +237,8 @@ def create_app(
     state: dict[str, Any] = {
         "config": deepcopy(config),
         "previews": {},
+        "sac_oauth_pending": {},
+        "sac_oauth_token": None,
     }
     runs_path = resolve_local_path(
         config_root, str(config["paths"]["runs"])
@@ -426,6 +439,18 @@ def create_app(
 
     @app.get("/")
     def index() -> str:
+        token = state["sac_oauth_token"]
+        connected = bool(
+            token and float(token["expires_at"]) > time.time()
+        )
+        runs = manager.list_runs()
+        active_run = next(
+            (
+                run for run in runs
+                if run.get("status") in {"queued", "running"}
+            ),
+            None,
+        )
         return render_template(
             "index.html",
             config=current_config(),
@@ -436,12 +461,112 @@ def create_app(
             cached_cities=cached_cities(resolve_local_path(
                 config_root, str(current_config()["paths"]["city_cache"])
             )),
-            runs=manager.list_runs(),
+            sac_api_connected=connected,
+            sac_api_scopes=(
+                sorted(set(str(token.get("scope") or "").split()))
+                if connected else []
+            ),
+            active_run_id=(
+                str(active_run["id"]) if active_run is not None else None
+            ),
+            runs=runs,
         )
+
+    @app.get("/login")
+    def sac_login():
+        if not _is_local_request():
+            abort(403)
+        pending: dict[str, dict[str, Any]] = state["sac_oauth_pending"]
+        now = time.time()
+        for identifier, item in list(pending.items()):
+            if now - float(item["created_at"]) > SAC_OAUTH_PENDING_SECONDS:
+                pending.pop(identifier, None)
+
+        returned_state = str(request.args.get("state") or "")
+        code = str(request.args.get("code") or "")
+        oauth_error = str(request.args.get("error") or "")
+        if code or oauth_error or returned_state:
+            attempt = pending.pop(returned_state, None)
+            if attempt is None:
+                raise ValueError("OAuth state is missing, expired, or invalid")
+            if oauth_error:
+                return render_template(
+                    "login.html",
+                    connected=False,
+                    error=f"Street Art Cities authorization failed: {oauth_error}",
+                ), 400
+            if not code:
+                raise ValueError("Street Art Cities returned no authorization code")
+            token_payload = exchange_pkce_code(
+                client_id=str(attempt["client_id"]),
+                redirect_uri=SAC_OAUTH_REDIRECT_URI,
+                code=code,
+                code_verifier=str(attempt["code_verifier"]),
+            )
+            expires_in = max(0, int(token_payload.get("expires_in") or 0))
+            state["sac_oauth_token"] = {
+                "access_token": str(token_payload["access_token"]),
+                "scope": str(token_payload.get("scope") or ""),
+                "expires_at": now + expires_in,
+            }
+            return render_template(
+                "login.html",
+                connected=True,
+                error=None,
+            )
+
+        client_id = str(
+            current_config()["matching"].get("api_client_id") or ""
+        ).strip()
+        if not client_id:
+            raise ValueError(
+                "Configure matching.api_client_id before connecting "
+                "Street Art Cities"
+            )
+        verifier, challenge = create_pkce_pair()
+        identifier = secrets.token_urlsafe(32)
+        pending[identifier] = {
+            "client_id": client_id,
+            "code_verifier": verifier,
+            "created_at": now,
+        }
+        while len(pending) > 10:
+            pending.pop(next(iter(pending)))
+        return redirect(oauth_authorization_url(
+            client_id=client_id,
+            redirect_uri=SAC_OAUTH_REDIRECT_URI,
+            scope=SAC_OAUTH_SCOPE,
+            state=identifier,
+            code_challenge=challenge,
+        ))
 
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/sac/collections")
+    def sac_collections():
+        if not _is_local_request():
+            abort(403)
+        token = state["sac_oauth_token"]
+        if token is None or float(token["expires_at"]) <= time.time():
+            state["sac_oauth_token"] = None
+            return jsonify({
+                "ok": False,
+                "error": "Connect Street Art Cities before testing the API",
+            }), 401
+        return jsonify({
+            "ok": True,
+            "collections": fetch_collections(str(token["access_token"])),
+        })
+
+    @app.post("/api/sac/disconnect")
+    def sac_disconnect():
+        if not _is_local_request():
+            abort(403)
+        state["sac_oauth_token"] = None
+        state["sac_oauth_pending"].clear()
+        return jsonify({"ok": True})
 
     @app.post("/api/config")
     def update_config():
@@ -625,8 +750,27 @@ def create_app(
                 config_root, str(run_config["paths"][key])
             ))
         visual = bool(run_config["matching"].get("visual_enabled", False))
+        environment = {}
+        if (
+            run_config["matching"].get("marker_source")
+            == "oauth-markers-api"
+        ):
+            token = state["sac_oauth_token"]
+            if token is None or float(token["expires_at"]) <= time.time():
+                raise ValueError(
+                    "Connect the Street Art Cities API before starting "
+                    "an authenticated marker run"
+                )
+            scopes = set(str(token.get("scope") or "").split())
+            if "markers:read" not in scopes:
+                raise ValueError(
+                    "Reconnect Street Art Cities to grant markers:read"
+                )
+            environment["SAC_API_ACCESS_TOKEN"] = str(token["access_token"])
         return jsonify({"ok": True, "run": manager.start(
-            run_config, visual=visual
+            run_config,
+            visual=visual,
+            environment=environment,
         )})
 
     @app.get("/api/runs")
