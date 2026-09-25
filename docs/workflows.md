@@ -78,16 +78,19 @@ link.
 
 Primary photos are selected by default; context photos are not. Tags can be
 applied directly to one image, the selected images, or every cluster image.
-`_unknown` and `_wall` remain available as workflow proposals. The GPS map
+`_unknown` and `_Wall_` remain available as workflow proposals. The GPS map
 shows primary, context, and Street Art Cities positions; drag its target and
 preview the move for the selected images. GPS actions show exact files and
 before/after values before a separate apply confirmation.
 
 Tags found on every cluster image appear once in **On all photos**, where they
-can be removed directly from the complete cluster. Autocomplete lists
-`_unknown` and `_wall` before artist entries for underscore queries. Tab and
-Shift+Tab move directly between cluster/per-image tag editors, and the first
-tag editor receives focus whenever a cluster page opens.
+can be removed directly from the complete cluster. Autocomplete ignores
+accents and separators while matching, but ranks literal accent-preserving
+matches first. For example, `more` finds `Morèje`, `nô` prioritizes `Nô`, and
+`l'emp` or `lemp` finds `L_Empreinte_Jo_V`. Typing `_W` places `_Wall_` first,
+while `_U` prioritizes `_unknown`. Tab and Shift+Tab move directly between
+cluster/per-image tag editors, and the first tag editor receives focus whenever
+a cluster page opens.
 
 The × button removes an existing tag immediately. **Add**, **Add to all**, and
 **Add to selected** also write immediately; pressing Enter in a tag editor is

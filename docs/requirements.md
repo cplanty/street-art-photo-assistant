@@ -6,7 +6,7 @@
 2. Preview selection by inclusive dates, times, tags, tagged state, and
    missing-GPS state.
 3. Group selected photos by normalized tag and geographic proximity.
-4. Use `_unknown` for untagged artwork and `_wall` for wall-level grouping.
+4. Use `_unknown` for untagged artwork and `_Wall_` for wall-level grouping.
 5. Optionally split nearby groups using local OpenCV visual matching.
 6. Review clusters in a local browser interface.
 7. Apply tag edits directly through exact atomic plans; preview GPS writes and

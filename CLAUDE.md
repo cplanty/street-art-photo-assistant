@@ -90,7 +90,7 @@ pattern for any new metadata-writing feature — see Repository rules below.
 - Never add personal photo paths, private datasets, credentials, or generated
   caches.
 - Synthetic fixtures only.
-- `_unknown` identifies an untagged artwork; `_wall` identifies a wall grouping.
+- `_unknown` identifies an untagged artwork; `_Wall_` identifies a wall grouping.
 - Do not hardcode user-specific labels or exclusion policies.
 - Preview every metadata write, replay the exact approved target list, preserve
   unrelated metadata, and write a JSON change log.

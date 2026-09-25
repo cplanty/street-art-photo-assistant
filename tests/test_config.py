@@ -12,7 +12,7 @@ class ConfigTests(unittest.TestCase):
             config = load_config(Path(temporary) / "missing.json")
 
         self.assertEqual("_unknown", config["clustering"]["unknown_tag"])
-        self.assertEqual("_wall", config["clustering"]["wall_tag"])
+        self.assertEqual("_Wall_", config["clustering"]["wall_tag"])
         self.assertFalse(config["matching"]["street_art_cities_enabled"])
         self.assertTrue(
             config["matching"]["api_client_id"].startswith("sac_client_")
@@ -36,6 +36,18 @@ class ConfigTests(unittest.TestCase):
             loaded = load_config(path)
 
         self.assertEqual(config, loaded)
+
+    def test_legacy_default_wall_tag_is_migrated(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "config.local.json"
+            path.write_text(json.dumps({
+                "version": 1,
+                "clustering": {"wall_tag": "_wall"},
+            }), encoding="utf-8")
+
+            loaded = load_config(path)
+
+        self.assertEqual("_Wall_", loaded["clustering"]["wall_tag"])
 
     def test_invalid_mode_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:

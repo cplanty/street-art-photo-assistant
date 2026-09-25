@@ -12,6 +12,7 @@ from typing import Iterable
 from .models import PhotoCluster, PhotoRecord
 
 EARTH_RADIUS_M = 6_371_000.0
+LEGACY_WALL_TAG = "_wall"
 
 
 @dataclass(frozen=True)
@@ -151,7 +152,8 @@ def _identity_tags(
     ]
     if tags:
         return list(dict.fromkeys(tags))
-    if any(tag.casefold() == wall_tag.casefold() for tag in photo.tags):
+    wall_tags = {wall_tag.casefold(), LEGACY_WALL_TAG.casefold()}
+    if any(tag.casefold() in wall_tags for tag in photo.tags):
         return [wall_tag]
     return [unknown_tag]
 
@@ -191,7 +193,7 @@ def cluster_photos(
     generic_tags: Iterable[str] = (),
     context_only_tags: Iterable[str] = (),
     unknown_tag: str = "_unknown",
-    wall_tag: str = "_wall",
+    wall_tag: str = "_Wall_",
 ) -> list[PhotoCluster]:
     """Group photos by identity tag and geographic proximity."""
 

@@ -145,6 +145,27 @@ code { overflow-wrap: anywhere; }
   gap: 8px;
   flex-wrap: wrap;
 }
+.autocomplete-menu {
+  position: fixed;
+  z-index: 1000;
+  display: none;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: white;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 15%);
+}
+.autocomplete-menu.open { display: block; }
+.autocomplete-item {
+  padding: 5px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.autocomplete-item.active, .autocomplete-item:hover {
+  background: #0969da;
+  color: white;
+}
 .common-tags {
   margin-bottom: 10px;
   padding: 7px 9px;

@@ -126,13 +126,22 @@ class ClusteringTests(unittest.TestCase):
         clusters = cluster_photos(
             [
                 photo("unknown.jpg", tags=[]),
-                photo("wall.jpg", tags=["_wall"]),
+                photo("wall.jpg", tags=["_Wall_"]),
                 photo("generic.jpg", tags=["StreetArt"]),
             ],
             radius_m=30,
             generic_tags=["StreetArt"],
         )
-        self.assertEqual(["_unknown", "_wall"], sorted({c.tag for c in clusters}))
+        self.assertEqual(["_Wall_", "_unknown"], sorted({c.tag for c in clusters}))
+
+    def test_legacy_wall_tag_is_canonicalized(self):
+        clusters = cluster_photos(
+            [photo("wall.jpg", tags=["_wall"])],
+            radius_m=50,
+            wall_tag="_Wall_",
+        )
+
+        self.assertEqual(["_Wall_"], [cluster.tag for cluster in clusters])
 
     def test_multi_identity_photo_is_context_for_nearby_primary(self):
         clusters = cluster_photos(

@@ -361,7 +361,10 @@ class WebTests(unittest.TestCase):
         artists.parent.mkdir(parents=True, exist_ok=True)
         artists.write_text(
             "tag;streetartcities_slug;instagram;status\n"
-            "Test Artist;test-artist;test.artist;confirmed\n",
+            "Test Artist;test-artist;test.artist;confirmed\n"
+            "Morèje;jerome-gulon-moreje;moreje;confirmed\n"
+            "Nô;no;no.street.art;confirmed\n"
+            "L_Empreinte_Jo_V;lempreinte-jo-v;lempreinte;confirmed\n",
             encoding="utf-8",
         )
         report["clusters"][0]["street_art_cities"] = {
@@ -399,10 +402,10 @@ class WebTests(unittest.TestCase):
         self.assertIn("Show in Explorer", detail_page)
         self.assertIn("On all photos:", detail_page)
         self.assertIn("_unknown", detail_page)
-        self.assertIn("_wall", detail_page)
+        self.assertIn("_Wall_", detail_page)
         self.assertLess(
             detail_page.index('<option value="_unknown">'),
-            detail_page.index('<option value="_wall">'),
+            detail_page.index('<option value="_Wall_">'),
         )
         self.assertIn("event.ctrlKey", detail_page)
         self.assertIn("ArrowLeft", detail_page)
@@ -427,6 +430,14 @@ class WebTests(unittest.TestCase):
         self.assertNotIn("Apply previewed tags", detail_page)
         self.assertIn("event.key !== 'Enter'", detail_page)
         self.assertIn("requestAnimationFrame", detail_page)
+        self.assertIn("function literalTagKey", detail_page)
+        self.assertIn("function foldedTagKey", detail_page)
+        self.assertIn("function tagMatchRank", detail_page)
+        self.assertIn("raw.startsWith('_w')", detail_page)
+        self.assertIn("installTagAutocomplete();", detail_page)
+        self.assertIn("Morèje", detail_page)
+        self.assertIn("Nô", detail_page)
+        self.assertIn("L_Empreinte_Jo_V", detail_page)
         self.assertIn("Satellite + labels", detail_page)
         self.assertIn("Topographic (OpenTopoMap)", detail_page)
         self.assertIn("Light (CARTO)", detail_page)

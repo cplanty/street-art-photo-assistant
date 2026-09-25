@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 CITY_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+LEGACY_WALL_TAG = "_wall"
+DEFAULT_WALL_TAG = "_Wall_"
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "version": 1,
@@ -30,7 +32,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "clustering": {
         "radius_m": 35,
         "unknown_tag": "_unknown",
-        "wall_tag": "_wall",
+        "wall_tag": DEFAULT_WALL_TAG,
         "generic_tags": ["StreetArt", "Stickers"],
         "context_only_tags": [],
     },
@@ -137,6 +139,8 @@ def load_config(path: Path) -> dict[str, Any]:
         if not isinstance(raw, dict):
             raise ValueError("Configuration must be a JSON object")
         config = _merge(DEFAULT_CONFIG, raw)
+        if config["clustering"].get("wall_tag") == LEGACY_WALL_TAG:
+            config["clustering"]["wall_tag"] = DEFAULT_WALL_TAG
     validate_config(config)
     return config
 

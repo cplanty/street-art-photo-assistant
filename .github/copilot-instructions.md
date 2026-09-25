@@ -77,7 +77,7 @@ report -> browser review and metadata edits.
   versioned/durable contracts. Write mutable JSON and CSV through a sibling
   temporary file followed by `os.replace`; retain the Windows sharing-violation
   retry behavior where already required.
-- `_unknown` is the identity tag for untagged artwork and `_wall` identifies a
+- `_unknown` is the identity tag for untagged artwork and `_Wall_` identifies a
   wall grouping. Tags beginning with `_` are internal and are not artist CSV
   entries. Do not hardcode user-specific labels, paths, or exclusion policies.
 - Clustering and plan generation are deterministic: normalize tag comparisons

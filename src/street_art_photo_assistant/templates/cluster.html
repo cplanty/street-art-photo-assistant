@@ -58,7 +58,7 @@
         </div>
         <div class="cluster-tag-tools">
           <label>Tag to add
-            <input id="cluster-tag-input" class="tag-editor" list="known-tags" autocomplete="off" placeholder="artist or free-form tag">
+            <input id="cluster-tag-input" class="tag-editor" autocomplete="off" aria-autocomplete="list" placeholder="artist or free-form tag">
           </label>
           <button type="button" onclick="addInputTag(false)" {% if read_only %}disabled{% endif %}>Add to all</button>
           <button type="button" onclick="addInputTag(true)" {% if read_only %}disabled{% endif %}>Add to selected</button>
@@ -103,7 +103,7 @@
                 {% endfor %}
               </div>
               <div class="input-action">
-                <input class="photo-tag-input tag-editor" list="known-tags" autocomplete="off" placeholder="add tag…">
+                <input class="photo-tag-input tag-editor" autocomplete="off" aria-autocomplete="list" placeholder="add tag…">
                 <button type="button" onclick="addPhotoTag(this)" {% if read_only %}disabled{% endif %}>Add</button>
               </div>
               <div class="photo-file-actions">
@@ -201,6 +201,7 @@ const runId = {{ run_id|tojson }};
 const clusterId = {{ cluster.id|tojson }};
 const cluster = {{ cluster|tojson }};
 const readOnly = {{ read_only|tojson }};
+const knownTags = {{ known_tags|tojson }};
 const knownArtistTags = new Set({{ artist_tags|tojson }}.map(tag => tag.toLocaleLowerCase()));
 const candidateSlugsByName = new Map(
   ((cluster.street_art_cities || {}).candidates || [])
@@ -255,6 +256,182 @@ function addPhotoTag(button) {
   const tag = input.value.trim();
   if (!tag) return;
   applyTagChange([photo.dataset.path], [tag], []);
+}
+
+function submitTagEditor(editor) {
+  if (editor.id === 'cluster-tag-input') {
+    addInputTag(false);
+  } else {
+    addPhotoTag(editor.closest('.input-action').querySelector('button'));
+  }
+}
+
+function literalTagKey(value) {
+  return String(value || '')
+    .normalize('NFC')
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+function foldedTagKey(value) {
+  return literalTagKey(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function tagMatchRank(tag, query) {
+  const literalTag = literalTagKey(tag);
+  const literalQuery = literalTagKey(query);
+  const foldedTag = foldedTagKey(tag);
+  const foldedQuery = foldedTagKey(query);
+  if (!literalQuery) return null;
+  if (literalTag === literalQuery) return 0;
+  if (literalTag.startsWith(literalQuery)) return 1;
+  if (literalTag.includes(literalQuery)) return 2;
+  if (foldedTag === foldedQuery) return 3;
+  if (foldedTag.startsWith(foldedQuery)) return 4;
+  if (foldedTag.includes(foldedQuery)) return 5;
+  return null;
+}
+
+function installTagAutocomplete() {
+  let menu = null;
+  let currentInput = null;
+  let items = [];
+  let active = -1;
+
+  function ensureMenu() {
+    if (menu) return menu;
+    menu = document.createElement('div');
+    menu.className = 'autocomplete-menu';
+    document.body.appendChild(menu);
+    menu.addEventListener('mousedown', event => {
+      const item = event.target.closest('.autocomplete-item');
+      if (!item) return;
+      event.preventDefault();
+      choose(Number(item.dataset.index));
+    });
+    return menu;
+  }
+
+  function close() {
+    if (menu) menu.classList.remove('open');
+    items = [];
+    active = -1;
+  }
+
+  function place() {
+    if (!currentInput || !menu) return;
+    const bounds = currentInput.getBoundingClientRect();
+    menu.style.left = `${bounds.left}px`;
+    menu.style.top = `${bounds.bottom + 2}px`;
+    menu.style.minWidth = `${bounds.width}px`;
+  }
+
+  function choose(index) {
+    if (!currentInput || index < 0 || index >= items.length) return;
+    const input = currentInput;
+    input.value = items[index];
+    close();
+    submitTagEditor(input);
+  }
+
+  function render(input) {
+    currentInput = input;
+    const query = input.value;
+    const raw = query.toLocaleLowerCase();
+    items = [];
+    if (literalTagKey(query)) {
+      const priority = raw.startsWith('_w')
+        ? '_Wall_'
+        : (raw.startsWith('_u') ? '_unknown' : '');
+      if (priority) {
+        const preferred = knownTags.find(
+          tag => tag.toLocaleLowerCase() === priority.toLocaleLowerCase()
+        );
+        if (preferred) items.push(preferred);
+      }
+      const ranked = knownTags
+        .map((tag, index) => ({
+          tag,
+          index,
+          rank: tagMatchRank(tag, query),
+        }))
+        .filter(candidate => candidate.rank !== null)
+        .sort((left, right) =>
+          left.rank - right.rank
+          || left.tag.length - right.tag.length
+          || left.tag.localeCompare(
+            right.tag, undefined, {sensitivity: 'variant'}
+          )
+          || left.index - right.index
+        );
+      for (const candidate of ranked) {
+        if (items.length >= 12) break;
+        if (!items.some(
+          tag => tag.toLocaleLowerCase()
+            === candidate.tag.toLocaleLowerCase()
+        )) {
+          items.push(candidate.tag);
+        }
+      }
+    }
+    if (!items.length) {
+      close();
+      return;
+    }
+    active = -1;
+    const target = ensureMenu();
+    target.innerHTML = items.map((tag, index) =>
+      `<div class="autocomplete-item" data-index="${index}">${escapeHtml(tag)}</div>`
+    ).join('');
+    place();
+    target.classList.add('open');
+  }
+
+  function setActive(index) {
+    if (!items.length) return;
+    active = (index + items.length) % items.length;
+    [...menu.children].forEach((child, childIndex) => {
+      child.classList.toggle('active', childIndex === active);
+    });
+    menu.children[active]?.scrollIntoView({block: 'nearest'});
+  }
+
+  document.addEventListener('input', event => {
+    if (event.target.matches('.tag-editor')) render(event.target);
+  });
+  document.addEventListener('keydown', event => {
+    if (!event.target.matches('.tag-editor')) return;
+    const open = menu?.classList.contains('open');
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (open) setActive(active + 1);
+      else render(event.target);
+    } else if (event.key === 'ArrowUp' && open) {
+      event.preventDefault();
+      setActive(active - 1);
+    } else if (event.key === 'Enter' && open && active >= 0) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      choose(active);
+    } else if (event.key === 'Escape' || event.key === 'Tab') {
+      close();
+    }
+  }, true);
+  document.addEventListener('click', event => {
+    if (
+      menu
+      && !menu.contains(event.target)
+      && event.target !== currentInput
+    ) {
+      close();
+    }
+  });
+  window.addEventListener('scroll', () => {
+    if (menu?.classList.contains('open')) place();
+  }, true);
+  window.addEventListener('resize', place);
 }
 
 async function applyTagChange(paths, add, remove) {
@@ -767,15 +944,13 @@ document.addEventListener('keydown', event => {
 });
 document.querySelectorAll('.tag-editor:not(:disabled)').forEach(editor => {
   editor.addEventListener('keydown', event => {
+    if (event.defaultPrevented) return;
     if (event.key !== 'Enter') return;
     event.preventDefault();
-    if (editor.id === 'cluster-tag-input') {
-      addInputTag(false);
-    } else {
-      addPhotoTag(editor.closest('.input-action').querySelector('button'));
-    }
+    submitTagEditor(editor);
   });
 });
+installTagAutocomplete();
 initResizers();
 initGpsMap();
 requestAnimationFrame(() => {

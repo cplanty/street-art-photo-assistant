@@ -22,7 +22,9 @@ apply endpoints while keeping preview and reports available.
 - `context_only_tags` keep wider/location photos available without making them
   primary visual references.
 - `unknown_tag` defaults to `_unknown`.
-- `wall_tag` defaults to `_wall`.
+- `wall_tag` defaults to `_Wall_`. The former exact default `_wall` is accepted
+  when reading existing photos and configurations, but new clusters and
+  proposals use `_Wall_`.
 - `selection.exclude_tags` contains the user's own exclusion policy. The
   application has no hidden label-specific exclusions.
 
