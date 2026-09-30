@@ -12,8 +12,9 @@ enter the app's non-secret client ID in **Street Art Cities matching → API
 test**, and select **Connect API**. After consent, the callback validates the
 OAuth state and exchanges the one-use code with its PKCE verifier.
 
-The test requests `collections:read` for **Test collections request** and
-`markers:read` for the authenticated marker source. The collections probe calls
+The test requests `collections:read` for **Test collections request**,
+`markers:read` for the authenticated marker source, and `artists:read` for the
+artist catalogue refresh. The collections probe calls
 `GET https://streetartcities.com/api/collections` with the resulting bearer
 token. OAuth state, PKCE verifiers, and access tokens remain in process memory;
 they are not written to configuration, logs, runs, or caches and are discarded
@@ -26,10 +27,10 @@ application and use the **API test** controls on
 
 1. Select **Disconnect local session** to discard the current in-memory token.
 2. Select **Connect API**. This link opens `/login`, starts a fresh PKCE flow,
-   and requests both `collections:read` and `markers:read`.
+   and requests `collections:read`, `markers:read`, and `artists:read`.
 3. Allow the requested access on Street Art Cities. The callback returns to
-   `/login`; then return to the home page and confirm that both scopes appear in
-   the connection status.
+   `/login`; then return to the home page and confirm that every scope appears
+   in the connection status.
 
 **Authorize again** can also start a fresh authorization without first
 disconnecting. Disconnecting is local because this test flow deliberately does
@@ -56,13 +57,52 @@ permissions, and redirect URLs shown during authorization.
   configuration snapshot.
 
 The Markers API search response is not field-equivalent to the city snapshot.
-It provides a thumbnail and artist display text, but not full image metadata,
-artist IDs/slugs, or attributes. API-sourced runs therefore use the thumbnail
-for visual evidence and can prioritize an artist only when its display name
-matches the local tag. Artist-page links and slug-based matching may be absent.
-The API is paginated, requires a current one-hour access token, and currently
-supports at most 10,000 results through its documented page range. These gaps
-are why the public city snapshot remains the default while the API matures.
+It provides a thumbnail rather than full image metadata or attributes, so
+API-sourced runs use the thumbnail for visual evidence. Since the February 2026
+API update it does carry full artist details, including the stable artist ID
+used as the `/artists/<slug>` slug, so artist-page links and slug-based ranking
+work from either source. The adapter normalizes both response shapes: the
+public snapshot nests coordinates under `location`, while the API returns flat
+`lat`/`lng`/`address` fields and a `city` object. The API is paginated, sorted
+oldest-first for stable pagination, requires a current one-hour access token,
+and no longer caps the reachable page range. The public city snapshot remains
+the default because it needs no authorization and keeps full image metadata.
+
+## Artist catalogue
+
+**Refresh artist catalogue** on the home page requires a live token with the
+`artists:read` scope. It pages through `GET /api/artists?city=<slug>`
+oldest-first, 100 per page, and writes the normalized result atomically to
+`paths.city_cache/<slug>.artists.json`:
+
+```json
+{
+  "version": 1,
+  "source": "oauth-artists-api",
+  "city": "paris",
+  "artists": [
+    {
+      "slug": "someone",
+      "name": "Someone",
+      "alternative_names": ["Some One"],
+      "country": "France",
+      "artworks_count": 12,
+      "url": "https://streetartcities.com/artists/someone",
+      "updated_at": "2026-02-01T08:30:00.000Z"
+    }
+  ]
+}
+```
+
+That file is not a marker cache; the city selector ignores it.
+
+The refresh then fills `data/artists.csv`. It only writes
+`streetartcities_name` for rows that already have a slug and a blank name, so a
+curated display name is never overwritten. Slugs the provider no longer knows
+are returned as `unresolved_slugs` and left untouched. Tags with no slug at all
+are matched against provider titles and alternative titles and returned as
+`suggestions`; they are **not** written, because assigning an identity to a tag
+is a review decision, not an automatic one.
 
 ## Network behavior
 

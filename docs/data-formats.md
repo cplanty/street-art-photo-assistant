@@ -30,6 +30,11 @@ Rows written before this column existed remain valid: the missing value is read
 as empty, and the header is rewritten with the column the next time a row is
 appended.
 
+The artist catalogue refresh fills `streetartcities_name` only where a slug is
+present and the name is blank. It never overwrites a curated name, never
+invents a slug for a tag that has none, and reports unresolved slugs and
+possible tag/slug matches for review instead of applying them.
+
 ## Normalized photo
 
 ```json
@@ -60,6 +65,18 @@ path and similarity, and any explicit reference-image error.
 time, source (`public-city-endpoint` or `oauth-markers-api`), and normalized
 artwork markers. Marker status is preserved, including removed markers, so the
 report can explain rather than silently discard nearby historical entries.
+Each marker carries `artist_slug` and, when the source provides it,
+`artist_name`. Both sources supply these, but the public snapshot nests
+coordinates under `location` while the API returns flat `lat`/`lng`/`address`
+fields; normalization accepts either shape.
+
+## Street Art Cities artist cache
+
+`data/cities/<slug>.artists.json` contains the cache format version, city slug,
+refresh time, source (`oauth-artists-api`), and the normalized artist
+catalogue. Each artist records `slug`, `name`, `alternative_names`, `country`,
+`artworks_count`, `url`, and `updated_at`. The file sits beside the marker
+caches but is not one; the city selector only lists `<slug>.json`.
 
 ## GPS repair plan
 

@@ -30,6 +30,7 @@ OAUTH_AUTHORIZE_URL = BASE_URL + "/api/oauth/authorize"
 OAUTH_TOKEN_URL = BASE_URL + "/api/oauth/token"
 COLLECTIONS_URL = BASE_URL + "/api/collections"
 MARKERS_SEARCH_URL = BASE_URL + "/api/markers/search"
+ARTISTS_URL = BASE_URL + "/api/artists"
 CITY_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 USER_AGENT = (
     f"StreetArtPhotoAssistant/{__version__} "
@@ -158,10 +159,6 @@ def refresh_city_api(
     page = 1
     total: int | None = None
     while total is None or len(markers) < total:
-        if page > 100:
-            raise ValueError(
-                "Street Art Cities marker search exceeds 10,000 results"
-            )
         if throttle is not None:
             throttle.wait()
         try:
@@ -171,6 +168,7 @@ def refresh_city_api(
                     "city": city,
                     "type": "artwork",
                     "status": "all",
+                    "sort": "oldest",
                     "page": page,
                     "perPage": 100,
                 },
@@ -228,6 +226,118 @@ def refresh_city_api(
     return payload
 
 
+def _normalize_artist(item: dict[str, Any]) -> dict[str, Any]:
+    alternatives = [
+        str(title).strip()
+        for title in (item.get("alternativeTitles") or [])
+        if str(title).strip()
+    ]
+    return {
+        "slug": str(item.get("id") or ""),
+        "name": str(item.get("title") or ""),
+        "alternative_names": alternatives,
+        "country": item.get("country"),
+        "artworks_count": item.get("artworksCount"),
+        "url": urljoin(BASE_URL, str(item.get("href") or "")),
+        "updated_at": item.get("updatedAt"),
+    }
+
+
+def refresh_city_artists(
+    city: str,
+    cache_directory: Path,
+    *,
+    access_token: str,
+    timeout_seconds: int = 30,
+    session: requests.Session | None = None,
+    throttle: RequestThrottle | None = None,
+    progress: ProgressCallback | None = None,
+) -> dict[str, Any]:
+    """Refresh one city's artist catalogue through the Artists API."""
+
+    city = city.strip().lower()
+    if not CITY_RE.fullmatch(city):
+        raise ValueError("City must be a lowercase slug")
+    if not access_token:
+        raise ValueError("A Street Art Cities access token is required")
+    client = session or requests.Session()
+    artists: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    page = 1
+    total: int | None = None
+    while total is None or len(artists) < total:
+        if throttle is not None:
+            throttle.wait()
+        try:
+            response = client.get(
+                ARTISTS_URL,
+                params={
+                    "city": city,
+                    "sort": "oldest",
+                    "page": page,
+                    "perPage": 100,
+                },
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "User-Agent": USER_AGENT,
+                },
+                timeout=timeout_seconds,
+            )
+            response.raise_for_status()
+            raw = response.json()
+        except requests.RequestException as exc:
+            raise RuntimeError(
+                f"Street Art Cities artist search failed: {exc}"
+            ) from exc
+        if not isinstance(raw, dict) or not isinstance(raw.get("items"), list):
+            raise ValueError(
+                "Street Art Cities artist search returned no items list"
+            )
+        try:
+            response_total = int(raw["total"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "Street Art Cities artist search returned no valid total"
+            ) from exc
+        if total is None:
+            total = response_total
+        elif total != response_total:
+            raise ValueError(
+                "Street Art Cities artist total changed during pagination"
+            )
+        for item in raw["items"]:
+            if not isinstance(item, dict) or not item.get("id"):
+                continue
+            artist = _normalize_artist(item)
+            if artist["slug"] in seen:
+                continue
+            seen.add(artist["slug"])
+            artists.append(artist)
+        if progress is not None:
+            progress(
+                "artists",
+                len(artists),
+                total,
+                f"Read {len(artists)} of {total} Street Art Cities artists",
+            )
+        if not raw["items"]:
+            if len(artists) < total:
+                raise ValueError(
+                    "Street Art Cities artist pagination ended early"
+                )
+            break
+        page += 1
+    payload = {
+        "version": 1,
+        "city": city,
+        "source": "oauth-artists-api",
+        "refreshed_at": datetime.now(timezone.utc).isoformat(),
+        "artists": artists,
+    }
+    _atomic_json(cache_directory / f"{city}.artists.json", payload)
+    return payload
+
+
 @dataclass
 class RequestThrottle:
     """Enforce a minimum interval between provider requests."""
@@ -269,9 +379,16 @@ def _normalize_marker(item: dict[str, Any]) -> dict[str, Any]:
     if not image_urls and item.get("thumbnail"):
         image_urls.append(str(item["thumbnail"]))
     artists = item.get("artists") or []
-    artist_slug = (
-        str(artists[0].get("slug") or "") if artists else ""
-    )
+    first_artist = artists[0] if artists and isinstance(artists[0], dict) else {}
+    artist_slug = str(first_artist.get("slug") or first_artist.get("id") or "")
+    artist_name = str(first_artist.get("title") or "")
+    latitude = item.get("lat")
+    if latitude is None:
+        latitude = location.get("lat")
+    longitude = item.get("lng")
+    if longitude is None:
+        longitude = location.get("lng")
+    address = item.get("address") or location.get("address")
     href = str(item.get("href") or "")
     return {
         "marker_id": str(item.get("id") or ""),
@@ -279,9 +396,10 @@ def _normalize_marker(item: dict[str, Any]) -> dict[str, Any]:
         "title": item.get("title"),
         "artist": item.get("artistsString"),
         "artist_slug": artist_slug,
-        "latitude": location.get("lat"),
-        "longitude": location.get("lng"),
-        "address": location.get("address"),
+        "artist_name": artist_name,
+        "latitude": latitude,
+        "longitude": longitude,
+        "address": address,
         "image_url": image_urls[0] if image_urls else None,
         "status": item.get("status"),
     }

@@ -92,15 +92,20 @@
           {% if sac_api_connected and 'markers:read' not in sac_api_scopes %}
             <p class="error">Reconnect to grant the required <code>markers:read</code> scope.</p>
           {% endif %}
+          {% if sac_api_connected and 'artists:read' not in sac_api_scopes %}
+            <p class="error">Reconnect to grant the <code>artists:read</code> scope used by the artist catalogue.</p>
+          {% endif %}
           <div class="button-row">
             <a class="button primary" href="{{ url_for('sac_login') }}" onclick="connectSacApi(event)">
               {% if sac_api_connected %}Authorize again{% else %}Connect API{% endif %}
             </a>
             {% if sac_api_connected %}
               <a class="button" href="{{ url_for('sac_collections') }}">Test collections request</a>
+              <button type="button" onclick="refreshArtistCatalog()">Refresh artist catalogue</button>
               <button type="button" onclick="disconnectSacApi()">Disconnect local session</button>
             {% endif %}
           </div>
+          <p id="artist-catalog-status" class="muted"></p>
         </div>
         <label class="check">
           <input id="download_images" type="checkbox">
@@ -449,6 +454,31 @@ async function disconnectSacApi() {
     location.reload();
   } catch (error) {
     byId('config-message').textContent = error.message;
+  }
+}
+
+async function refreshArtistCatalog() {
+  const status = byId('artist-catalog-status');
+  status.textContent = 'Refreshing the Street Art Cities artist catalogue…';
+  try {
+    const result = await api('/api/artists/catalog', {
+      method: 'POST',
+      body: JSON.stringify({city: byId('city').value.trim()})
+    });
+    const parts = [
+      `${result.artists} artist(s) in ${result.city}`,
+      `${result.filled.length} display name(s) filled`
+    ];
+    if (result.unresolved_slugs.length) {
+      parts.push(`${result.unresolved_slugs.length} slug(s) not found: ${result.unresolved_slugs.join(', ')}`);
+    }
+    if (result.suggestions.length) {
+      parts.push(`${result.suggestions.length} unmapped tag(s) match an artist: ` +
+        result.suggestions.map(item => `${item.tag} → ${item.slug}`).join(', '));
+    }
+    status.textContent = parts.join(' · ');
+  } catch (error) {
+    status.textContent = error.message;
   }
 }
 

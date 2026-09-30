@@ -11,7 +11,12 @@ from urllib.parse import parse_qs, urlparse
 from street_art_photo_assistant.config import DEFAULT_CONFIG
 from street_art_photo_assistant.photos import read_photo
 from street_art_photo_assistant.runs import RunManager
-from street_art_photo_assistant.web import _choose_folder, create_app
+from street_art_photo_assistant.web import (
+    _choose_folder,
+    _fill_artist_names,
+    _suggest_artist_slugs,
+    create_app,
+)
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -165,7 +170,7 @@ class WebTests(unittest.TestCase):
         query = parse_qs(authorization.query)
         self.assertEqual("streetartcities.com", authorization.netloc)
         self.assertEqual(
-            ["collections:read markers:read"], query["scope"]
+            ["collections:read markers:read artists:read"], query["scope"]
         )
         self.assertEqual(["S256"], query["code_challenge_method"])
 
@@ -320,6 +325,45 @@ class WebTests(unittest.TestCase):
         })
 
         self.assertEqual(400, response.status_code)
+
+    def test_catalogue_fills_blank_names_and_suggests_unmapped_tags(self):
+        artists = self.root / "data" / "artists.csv"
+        artists.parent.mkdir(parents=True, exist_ok=True)
+        artists.write_text(
+            "tag;streetartcities_slug;streetartcities_name;instagram;status\n"
+            "Kept;kept-slug;Curated Name;;confirmed\n"
+            "Blank;blank-slug;;;confirmed\n"
+            "Gone;dead-slug;;;confirmed\n"
+            "Unmapped;;;;\n"
+            "_internal;;;;unknown\n",
+            encoding="utf-8",
+        )
+
+        result = _fill_artist_names(artists, {
+            "kept-slug": "Provider Name",
+            "blank-slug": "Blank Artist",
+        })
+
+        self.assertEqual(1, len(result["filled"]))
+        self.assertEqual("Blank Artist", result["filled"][0]["name"])
+        self.assertEqual(["dead-slug"], result["unresolved_slugs"])
+        written = artists.read_text(encoding="utf-8")
+        self.assertIn("Kept;kept-slug;Curated Name;;confirmed", written)
+        self.assertIn("Blank;blank-slug;Blank Artist;;confirmed", written)
+        self.assertIn("Gone;dead-slug;;;confirmed", written)
+
+        suggestions = _suggest_artist_slugs(artists, [
+            {
+                "slug": "unmapped-artist",
+                "name": "Someone",
+                "alternative_names": ["unmapped"],
+            },
+            {"slug": "internal", "name": "_internal", "alternative_names": []},
+        ])
+        self.assertEqual(
+            [{"tag": "Unmapped", "slug": "unmapped-artist", "name": "Someone"}],
+            suggestions,
+        )
 
     def test_legacy_artist_rows_gain_the_name_column_on_append(self):
         artists = self.root / "data" / "artists.csv"

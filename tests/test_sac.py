@@ -25,6 +25,7 @@ from street_art_photo_assistant.sac import (
     oauth_authorization_url,
     refresh_city,
     refresh_city_api,
+    refresh_city_artists,
 )
 
 
@@ -196,6 +197,116 @@ class SACTests(unittest.TestCase):
                 "Bearer test-access-token",
                 call.kwargs["headers"]["Authorization"],
             )
+
+    def test_flat_api_marker_shape_is_normalized(self):
+        flat = {
+            "id": "marker-9",
+            "type": "artwork",
+            "status": "active",
+            "href": "/cities/test/markers/marker-9",
+            "title": "Flat marker",
+            "artistsString": "Public Artist",
+            "artists": [{
+                "id": "public-artist",
+                "title": "Public Artist",
+                "href": "https://streetartcities.com/artists/public-artist",
+            }],
+            "lat": 48.5,
+            "lng": 2.5,
+            "address": "Flat street",
+            "city": {"id": "test-city", "title": "Test City"},
+            "thumbnail": "https://images.example.test/flat.jpg",
+        }
+        session = Mock()
+        session.get.return_value = FakeResponse({
+            "items": [flat], "page": 1, "perPage": 100, "total": 1,
+        })
+        with tempfile.TemporaryDirectory() as temporary:
+            payload = refresh_city_api(
+                "test-city",
+                Path(temporary),
+                access_token="test-access-token",
+                session=session,
+            )
+
+        marker = payload["markers"][0]
+        self.assertEqual(48.5, marker["latitude"])
+        self.assertEqual(2.5, marker["longitude"])
+        self.assertEqual("Flat street", marker["address"])
+        self.assertEqual("public-artist", marker["artist_slug"])
+        self.assertEqual("Public Artist", marker["artist_name"])
+        self.assertEqual("oldest", session.get.call_args.kwargs["params"]["sort"])
+
+    def test_legacy_nested_marker_shape_is_still_normalized(self):
+        session = Mock()
+        session.get.return_value = FakeResponse({
+            "items": [self.marker_item()]
+        })
+        with tempfile.TemporaryDirectory() as temporary:
+            payload = refresh_city(
+                "test-city", Path(temporary), session=session
+            )
+
+        marker = payload["markers"][0]
+        self.assertEqual(48.0, marker["latitude"])
+        self.assertEqual(2.0, marker["longitude"])
+        self.assertEqual("public-artist", marker["artist_slug"])
+
+    def test_artist_catalogue_paginates_and_caches(self):
+        session = Mock()
+        session.get.side_effect = [
+            FakeResponse({
+                "items": [{
+                    "id": "public-artist",
+                    "title": "Public Artist",
+                    "alternativeTitles": ["Publik Artist"],
+                    "artworksCount": 4,
+                    "country": "France",
+                    "href": "/artists/public-artist",
+                    "updatedAt": "2026-02-01T08:30:00.000Z",
+                }],
+                "page": 1, "perPage": 100, "total": 2,
+            }),
+            FakeResponse({
+                "items": [{
+                    "id": "other-artist",
+                    "title": "Other Artist",
+                    "href": "/artists/other-artist",
+                }],
+                "page": 2, "perPage": 100, "total": 2,
+            }),
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            cache = Path(temporary)
+            payload = refresh_city_artists(
+                "test-city",
+                cache,
+                access_token="test-access-token",
+                session=session,
+            )
+            saved = json.loads(
+                (cache / "test-city.artists.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual([], cached_cities(cache))
+
+        self.assertEqual("oauth-artists-api", payload["source"])
+        self.assertEqual(payload, saved)
+        self.assertEqual(
+            ["public-artist", "other-artist"],
+            [artist["slug"] for artist in payload["artists"]],
+        )
+        self.assertEqual(
+            ["Publik Artist"], payload["artists"][0]["alternative_names"]
+        )
+        self.assertEqual(
+            "https://streetartcities.com/artists/public-artist",
+            payload["artists"][0]["url"],
+        )
+        self.assertEqual(2, session.get.call_count)
+        self.assertEqual(
+            "Bearer test-access-token",
+            session.get.call_args.kwargs["headers"]["Authorization"],
+        )
 
     def test_nearby_candidates_rank_same_artist_first(self):
         cluster = PhotoCluster(

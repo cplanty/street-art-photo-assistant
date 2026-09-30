@@ -44,16 +44,18 @@ from .models import PhotoRecord
 from .photos import read_photo
 from .runs import RunManager
 from .sac import (
+    RequestThrottle,
     cached_cities,
     create_pkce_pair,
     exchange_pkce_code,
     fetch_collections,
     oauth_authorization_url,
+    refresh_city_artists,
 )
 from .workflow import scan_and_select, sources_from_config
 
 SAC_OAUTH_REDIRECT_URI = "http://127.0.0.1:8787/login"
-SAC_OAUTH_SCOPE = "collections:read markers:read"
+SAC_OAUTH_SCOPE = "collections:read markers:read artists:read"
 SAC_OAUTH_PENDING_SECONDS = 600
 
 
@@ -113,6 +115,15 @@ def _instagram_handle(value: str) -> str:
     if value and not INSTAGRAM_HANDLE_RE.fullmatch(value):
         raise ValueError("Instagram must be a handle or profile URL")
     return value
+
+
+ARTIST_FIELDS = [
+    "tag",
+    "streetartcities_slug",
+    "streetartcities_name",
+    "instagram",
+    "status",
+]
 
 
 def _artist_tags(
@@ -177,13 +188,7 @@ def _append_artist(
             "Street Art Cities name requires a slug"
         )
     handle = _instagram_handle(instagram)
-    fields = [
-        "tag",
-        "streetartcities_slug",
-        "streetartcities_name",
-        "instagram",
-        "status",
-    ]
+    fields = list(ARTIST_FIELDS)
     rows: list[dict[str, str]] = []
     if path.is_file():
         with path.open(encoding="utf-8-sig", newline="") as stream:
@@ -213,6 +218,96 @@ def _append_artist(
     finally:
         temporary.unlink(missing_ok=True)
     return True
+
+
+def _fill_artist_names(
+    path: Path, names_by_slug: dict[str, str]
+) -> dict[str, Any]:
+    """Fill only blank display names, never overwriting a curated value."""
+
+    if not path.is_file():
+        raise ValueError("The artist mapping file does not exist")
+    with path.open(encoding="utf-8-sig", newline="") as stream:
+        reader = csv.DictReader(stream, delimiter=";")
+        fields = list(reader.fieldnames or ARTIST_FIELDS)
+        rows = [dict(row) for row in reader]
+    if "streetartcities_name" not in fields:
+        fields.insert(
+            fields.index("streetartcities_slug") + 1, "streetartcities_name"
+        )
+    filled: list[dict[str, str]] = []
+    unresolved: list[str] = []
+    for row in rows:
+        row.pop(None, None)
+        slug = str(row.get("streetartcities_slug") or "").strip()
+        if not slug:
+            continue
+        current = str(row.get("streetartcities_name") or "").strip()
+        if current:
+            continue
+        name = names_by_slug.get(slug.casefold(), "")
+        if name:
+            row["streetartcities_name"] = name
+            filled.append({"tag": str(row.get("tag") or ""), "slug": slug,
+                           "name": name})
+        else:
+            unresolved.append(slug)
+    if filled:
+        temporary = path.with_name(path.name + ".tmp")
+        try:
+            with temporary.open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.DictWriter(
+                    stream,
+                    fieldnames=fields,
+                    delimiter=";",
+                    lineterminator="\n",
+                )
+                writer.writeheader()
+                writer.writerows(
+                    {field: (row.get(field) or "") for field in fields}
+                    for row in rows
+                )
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+    return {
+        "filled": filled,
+        "unresolved_slugs": sorted(set(unresolved)),
+        "rows": len(rows),
+    }
+
+
+def _suggest_artist_slugs(
+    path: Path, artists: list[dict[str, Any]]
+) -> list[dict[str, str]]:
+    """Propose provider identities for unmapped tags without writing them."""
+
+    by_name: dict[str, dict[str, Any]] = {}
+    for artist in artists:
+        slug = str(artist.get("slug") or "")
+        if not slug:
+            continue
+        titles = [str(artist.get("name") or "")]
+        titles.extend(str(title) for title in artist.get("alternative_names") or [])
+        for title in titles:
+            key = title.strip().casefold()
+            if key and key not in by_name:
+                by_name[key] = artist
+    suggestions = []
+    with path.open(encoding="utf-8-sig", newline="") as stream:
+        for row in csv.DictReader(stream, delimiter=";"):
+            tag = str(row.get("tag") or "").strip()
+            slug = str(row.get("streetartcities_slug") or "").strip()
+            if not tag or slug or tag.startswith("_"):
+                continue
+            match = by_name.get(tag.casefold())
+            if match:
+                suggestions.append({
+                    "tag": tag,
+                    "slug": str(match.get("slug") or ""),
+                    "name": str(match.get("name") or ""),
+                })
+    return suggestions
 
 
 def _choose_folder(initial: str) -> str:
@@ -618,6 +713,62 @@ def create_app(
         return jsonify({
             "ok": True,
             "added": added,
+            "path": str(artists_path),
+        })
+
+    @app.post("/api/artists/catalog")
+    def refresh_artist_catalog():
+        if not _is_local_request():
+            return jsonify({"ok": False, "error": "Local access only"}), 403
+        if current_config().get("read_only"):
+            return jsonify({"ok": False, "error": "Read-only mode"}), 403
+        payload = request.get_json(silent=True) or {}
+        config = current_config()
+        city = str(
+            payload.get("city") or config["matching"].get("city") or ""
+        ).strip().lower()
+        if not city:
+            raise ValueError("A Street Art Cities city slug is required")
+        token = state["sac_oauth_token"]
+        if token is None or float(token["expires_at"]) <= time.time():
+            raise ValueError(
+                "Connect the Street Art Cities API before refreshing "
+                "the artist catalogue"
+            )
+        scopes = set(str(token.get("scope") or "").split())
+        if "artists:read" not in scopes:
+            raise ValueError(
+                "Reconnect Street Art Cities to grant artists:read"
+            )
+        cache_directory = resolve_local_path(
+            config_root, str(config["paths"]["city_cache"])
+        )
+        artists_path = resolve_local_path(
+            config_root, str(config["paths"]["artists"])
+        )
+        catalog = refresh_city_artists(
+            city,
+            cache_directory,
+            access_token=str(token["access_token"]),
+            throttle=RequestThrottle(
+                float(config["matching"].get("request_interval_seconds", 0.5))
+            ),
+        )
+        names_by_slug = {
+            str(artist["slug"]).casefold(): str(artist["name"])
+            for artist in catalog["artists"]
+            if artist.get("slug") and artist.get("name")
+        }
+        result = _fill_artist_names(artists_path, names_by_slug)
+        return jsonify({
+            "ok": True,
+            "city": city,
+            "artists": len(catalog["artists"]),
+            "filled": result["filled"],
+            "unresolved_slugs": result["unresolved_slugs"],
+            "suggestions": _suggest_artist_slugs(
+                artists_path, catalog["artists"]
+            ),
             "path": str(artists_path),
         })
 
