@@ -9,6 +9,10 @@ from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlparse
 
 from street_art_photo_assistant.config import DEFAULT_CONFIG
+from street_art_photo_assistant.metadata import (
+    apply_tag_edit_plan,
+    build_tag_edit_plan,
+)
 from street_art_photo_assistant.photos import read_photo
 from street_art_photo_assistant.runs import RunManager
 from street_art_photo_assistant.web import (
@@ -598,6 +602,45 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(403, response.status_code)
         self.assertFalse(read_photo(self.missing, "Camera").has_gps)
+
+    def test_proposals_exclude_tags_the_photos_already_carry(self):
+        preview = self.preview()
+        started = self.client.post("/api/runs", json={
+            "config": self.config,
+            "preview_token": preview["token"],
+        }).get_json()["run"]
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            status = self.manager.status(started["id"])
+            if status["status"] not in {"queued", "running"}:
+                break
+            time.sleep(0.05)
+        report = self.manager.report(started["id"])
+        cluster = report["clusters"][0]
+        first = Path(cluster["photos"][0]["path"])
+        url = f"/runs/{started['id']}/clusters/{cluster['id']}"
+
+        before = self.client.get(url).get_data(as_text=True)
+        self.assertIn('chooseProposal("_unknown")', before)
+        self.assertIn(
+            f"[{json.dumps(str(first))}], [\"_unknown\"]",
+            before.replace("&#34;", '"'),
+        )
+
+        apply_tag_edit_plan(
+            build_tag_edit_plan([first], add=["_unknown"]),
+            allowed_roots=[self.photos],
+            change_log_path=self.root / "change.json",
+        )
+
+        after = self.client.get(url).get_data(as_text=True)
+        self.assertNotIn(
+            f"[{json.dumps(str(first))}], [\"_unknown\"]",
+            after.replace("&#34;", '"'),
+        )
+        self.assertIn('chooseProposal("_Wall_")', after)
+        if len(cluster["photos"]) + len(cluster["context_photos"]) == 1:
+            self.assertNotIn('chooseProposal("_unknown")', after)
 
     def test_cluster_tag_preview_accepts_only_selected_cluster_photos(self):
         preview = self.preview()

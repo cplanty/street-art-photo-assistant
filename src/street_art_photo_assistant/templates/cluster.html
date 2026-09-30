@@ -72,6 +72,8 @@
           <strong>Tag proposals:</strong>
           {% for tag in tag_proposals %}
             <button type="button" class="proposal-chip" onclick="chooseProposal({{ tag|tojson }})">{{ tag }}</button>
+          {% else %}
+            <span class="muted">every proposal is already on all images</span>
           {% endfor %}
           <span class="muted">Choose a proposal, then add it to all or selected images.</span>
         </div>
@@ -101,8 +103,10 @@
               </div>
               <div class="photo-proposals">
                 <strong>Proposals:</strong>
-                {% for tag in tag_proposals %}
+                {% for tag in photo.proposals %}
                   <button type="button" class="proposal-chip" onclick='applyTagChange([{{ photo.path|tojson }}], [{{ tag|tojson }}], [])' {% if read_only %}disabled{% endif %}>{{ tag }}</button>
+                {% else %}
+                  <span class="muted">none left to add</span>
                 {% endfor %}
               </div>
               <div class="input-action">

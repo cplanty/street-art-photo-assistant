@@ -1032,6 +1032,18 @@ def create_app(
             common_tags = [
                 tag for tag in photo_groups[0]["tags"] if tag in common
             ]
+        for photo in photo_groups:
+            present = {str(tag).casefold() for tag in photo["tags"]}
+            photo["proposals"] = [
+                tag for tag in proposals if tag.casefold() not in present
+            ]
+        everywhere = set.intersection(*[
+            {str(tag).casefold() for tag in photo["tags"]}
+            for photo in photo_groups
+        ]) if photo_groups else set()
+        cluster_proposals = [
+            tag for tag in proposals if tag.casefold() not in everywhere
+        ]
         ids = [
             item["id"] for item in ordered_clusters(run_id, sort, direction)
         ]
@@ -1043,7 +1055,7 @@ def create_app(
             known_tags=autocomplete_tags,
             artist_tags=artist_tags,
             common_tags=common_tags,
-            tag_proposals=proposals,
+            tag_proposals=cluster_proposals,
             previous_id=ids[(position - 1) % len(ids)],
             next_id=ids[(position + 1) % len(ids)],
             sort=sort,

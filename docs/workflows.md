@@ -78,10 +78,14 @@ link.
 
 Primary photos are selected by default; context photos are not. Tags can be
 applied directly to one image, the selected images, or every cluster image.
-`_unknown` and `_Wall_` remain available as workflow proposals. The GPS map
-shows primary, context, and Street Art Cities positions; drag its target and
-preview the move for the selected images. GPS actions show exact files and
-before/after values before a separate apply confirmation.
+`_unknown` and `_Wall_` remain available as workflow proposals. A proposal is
+only offered where it would actually change something: an image lists only the
+tags it does not already carry, and the cluster-wide proposal row hides any tag
+that is already on every image. Autocomplete still offers every known tag.
+
+The GPS map shows primary, context, and Street Art Cities positions; drag its
+target and preview the move for the selected images. GPS actions show exact
+files and before/after values before a separate apply confirmation.
 
 Tags found on every cluster image appear once in **On all photos**, where they
 can be removed directly from the complete cluster. Autocomplete ignores
