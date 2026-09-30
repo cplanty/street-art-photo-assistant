@@ -237,6 +237,9 @@ def run_offline_clustering(
                 _resolve(config_root, paths["city_cache"]),
                 access_token=access_token,
                 throttle=throttle,
+                incremental=bool(
+                    matching.get("incremental_marker_refresh", True)
+                ),
             )
         else:
             city_payload = refresh_city(
@@ -245,6 +248,16 @@ def run_offline_clustering(
                 throttle=throttle,
             )
         marker_count = len(city_payload["markers"])
+        if city_payload.get("incremental"):
+            progress.update(
+                stage="sac-refresh",
+                percent=60,
+                message=(
+                    "Incremental refresh applied "
+                    f"{city_payload.get('changed_since_last_sync', 0)} "
+                    f"changed marker(s) to {marker_count} cached marker(s)"
+                ),
+            )
         marker_warning = None
         if marker_count >= int(
             matching["large_city_warning_markers"]

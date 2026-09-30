@@ -74,6 +74,7 @@
             <option value="oauth-markers-api">OAuth Markers API (new)</option>
           </select>
         </label>
+        <label><input type="checkbox" id="incremental_marker_refresh"> Incremental marker refresh (OAuth Markers API only)</label>
         <p class="muted">Leave matching disabled for a completely offline cluster report.</p>
         <div class="subsection">
           <h3>API test</h3>
@@ -349,6 +350,7 @@ function readForm() {
     street_art_cities_enabled: byId('sac_enabled').checked,
     api_client_id: byId('sac_api_client_id').value.trim(),
     marker_source: byId('marker_source').value,
+    incremental_marker_refresh: byId('incremental_marker_refresh').checked,
     city: byId('city').value.trim(),
     visual_enabled: byId('visual_enabled').checked,
     download_images: byId('download_images').checked,
@@ -370,6 +372,7 @@ function writeForm() {
   byId('sac_enabled').checked = !!config.matching.street_art_cities_enabled;
   byId('sac_api_client_id').value = config.matching.api_client_id || '';
   byId('marker_source').value = config.matching.marker_source || 'public-city-endpoint';
+  byId('incremental_marker_refresh').checked = config.matching.incremental_marker_refresh !== false;
   byId('city').value = config.matching.city || '';
   byId('visual_enabled').checked = !!config.matching.visual_enabled;
   byId('download_images').checked = !!config.matching.download_images;

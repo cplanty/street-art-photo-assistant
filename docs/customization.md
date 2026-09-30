@@ -39,6 +39,10 @@ apply endpoints while keeping preview and reports available.
 - `matching.marker_source` selects the established `public-city-endpoint` or
   the authenticated, paginated `oauth-markers-api`. The public source remains
   the default because its city snapshot contains richer artist/image fields.
+- `matching.incremental_marker_refresh` (default `true`) applies only to
+  `oauth-markers-api`. It requests only markers changed since the previous
+  sync and merges them into the existing city cache. Set it to `false` to force
+  a complete re-download on every run.
 - `matching.profile` limits candidates per cluster to 4 (`quick`), 8
   (`balanced`), or 16 (`thorough`).
 - `matching.request_interval_seconds` is the minimum delay between SAC

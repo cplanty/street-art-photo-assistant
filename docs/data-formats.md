@@ -65,6 +65,8 @@ path and similarity, and any explicit reference-image error.
 time, source (`public-city-endpoint` or `oauth-markers-api`), and normalized
 artwork markers. Marker status is preserved, including removed markers, so the
 report can explain rather than silently discard nearby historical entries.
+API-sourced caches also record `synced_at` (the incremental cursor),
+`incremental`, and `changed_since_last_sync`.
 Each marker carries `artist_slug` and, when the source provides it,
 `artist_name`. Both sources supply these, but the public snapshot nests
 coordinates under `location` while the API returns flat `lat`/`lng`/`address`

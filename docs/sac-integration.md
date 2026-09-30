@@ -121,10 +121,26 @@ Matching-disabled runs do not import the adapter or make provider requests.
 
 ## Incremental behavior
 
-Marker metadata is refreshed as one complete city snapshot on every run. The
-application does not request only changed markers: it downloads the single
-`markers.json` response, normalizes it, and atomically replaces the previous
-city cache. This makes additions, updates, and removals visible immediately.
+Marker metadata from the public `markers.json` source is refreshed as one
+complete city snapshot on every run: the application downloads the single
+response, normalizes it, and atomically replaces the previous city cache. This
+makes additions, updates, and removals visible immediately.
+
+The authenticated `oauth-markers-api` source can sync incrementally, which is
+the default (`matching.incremental_marker_refresh`). Each API refresh records
+the timestamp taken **before** its first request as `synced_at`. The next
+incremental refresh passes that value as `updatedSince` and merges the returned
+changes into the cached markers by marker ID, preserving the existing order and
+appending new markers at the end. Because the search keeps `status=all`,
+removals arrive as status changes rather than disappearing silently, and
+recording the start time means an edit made mid-sync is re-fetched next time
+instead of being missed.
+
+A full refresh is performed automatically whenever an incremental one is not
+safe: no cache file, an unreadable cache, a cache written by the public source,
+or a cache without `synced_at`. The stored payload reports which mode ran
+(`incremental`) and how many markers the provider returned
+(`changed_since_last_sync`).
 
 Reference-picture caching is incremental. A non-empty cached image for a marker
 is reused without another request, so later runs download only pictures missing

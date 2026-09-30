@@ -308,6 +308,104 @@ class SACTests(unittest.TestCase):
             session.get.call_args.kwargs["headers"]["Authorization"],
         )
 
+    def test_incremental_refresh_merges_changed_markers_only(self):
+        session = Mock()
+        session.get.return_value = FakeResponse({
+            "items": [{
+                **self.marker_item(),
+                "siteId": "test-city",
+                "artists": [],
+            }],
+            "page": 1, "perPage": 100, "total": 1,
+        })
+        with tempfile.TemporaryDirectory() as temporary:
+            cache = Path(temporary)
+            first = refresh_city_api(
+                "test-city",
+                cache,
+                access_token="test-access-token",
+                session=session,
+                incremental=True,
+            )
+            self.assertFalse(first["incremental"])
+            self.assertNotIn(
+                "updatedSince", session.get.call_args.kwargs["params"]
+            )
+
+            session.get.return_value = FakeResponse({
+                "items": [
+                    {
+                        **self.marker_item(),
+                        "title": "Renamed marker",
+                        "siteId": "test-city",
+                        "artists": [],
+                    },
+                    {
+                        **self.marker_item(),
+                        "id": "marker-2",
+                        "status": "removed",
+                        "siteId": "test-city",
+                        "artists": [],
+                    },
+                ],
+                "page": 1, "perPage": 100, "total": 2,
+            })
+            second = refresh_city_api(
+                "test-city",
+                cache,
+                access_token="test-access-token",
+                session=session,
+                incremental=True,
+            )
+            saved = json.loads(
+                (cache / "test-city.json").read_text(encoding="utf-8")
+            )
+
+        self.assertTrue(second["incremental"])
+        self.assertEqual(
+            first["synced_at"],
+            session.get.call_args.kwargs["params"]["updatedSince"],
+        )
+        self.assertEqual(2, second["changed_since_last_sync"])
+        self.assertEqual(
+            ["marker-1", "marker-2"],
+            [marker["marker_id"] for marker in second["markers"]],
+        )
+        self.assertEqual("Renamed marker", second["markers"][0]["title"])
+        self.assertEqual("removed", second["markers"][1]["status"])
+        self.assertEqual(second, saved)
+
+    def test_incremental_refresh_ignores_a_public_snapshot_cache(self):
+        session = Mock()
+        session.get.return_value = FakeResponse({
+            "items": [self.marker_item()]
+        })
+        with tempfile.TemporaryDirectory() as temporary:
+            cache = Path(temporary)
+            refresh_city("test-city", cache, session=session)
+
+            session.get.return_value = FakeResponse({
+                "items": [{
+                    **self.marker_item(),
+                    "siteId": "test-city",
+                    "artists": [],
+                }],
+                "page": 1, "perPage": 100, "total": 1,
+            })
+            payload = refresh_city_api(
+                "test-city",
+                cache,
+                access_token="test-access-token",
+                session=session,
+                incremental=True,
+            )
+
+        self.assertFalse(payload["incremental"])
+        self.assertIsNone(payload["changed_since_last_sync"])
+        self.assertNotIn(
+            "updatedSince", session.get.call_args.kwargs["params"]
+        )
+
     def test_nearby_candidates_rank_same_artist_first(self):
         cluster = PhotoCluster(
             id="cluster",

@@ -41,6 +41,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "street_art_cities_enabled": False,
         "api_client_id": "sac_client_I8omQFZFpgwmQq8D",
         "marker_source": "public-city-endpoint",
+        "incremental_marker_refresh": True,
         "city": "",
         "visual_enabled": False,
         "download_images": False,
@@ -110,6 +111,12 @@ def validate_config(config: dict[str, Any]) -> None:
         "public-city-endpoint", "oauth-markers-api"
     }:
         raise ValueError("matching.marker_source is invalid")
+    if not isinstance(
+        config["matching"].get("incremental_marker_refresh", True), bool
+    ):
+        raise ValueError(
+            "matching.incremental_marker_refresh must be true or false"
+        )
     if float(config["matching"]["request_interval_seconds"]) < 0:
         raise ValueError("matching.request_interval_seconds cannot be negative")
     if int(config["matching"]["large_city_warning_markers"]) <= 0:

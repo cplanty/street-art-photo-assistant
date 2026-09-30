@@ -138,6 +138,49 @@ def fetch_collections(
         ) from exc
 
 
+def _incremental_cursor(path: Path) -> tuple[str, list[dict[str, Any]]] | None:
+    """Return the cursor and cached markers usable for an incremental sync."""
+
+    if not path.is_file():
+        return None
+    try:
+        cached = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(cached, dict):
+        return None
+    if cached.get("source") != "oauth-markers-api":
+        return None
+    markers = cached.get("markers")
+    cursor = str(cached.get("synced_at") or "").strip()
+    if not cursor or not isinstance(markers, list):
+        return None
+    return cursor, [marker for marker in markers if isinstance(marker, dict)]
+
+
+def _merge_markers(
+    previous: list[dict[str, Any]], changed: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Apply changed markers onto the previous snapshot, keeping order."""
+
+    merged: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for marker in previous:
+        marker_id = str(marker.get("marker_id") or "")
+        if not marker_id or marker_id in merged:
+            continue
+        merged[marker_id] = marker
+        order.append(marker_id)
+    for marker in changed:
+        marker_id = str(marker.get("marker_id") or "")
+        if not marker_id:
+            continue
+        if marker_id not in merged:
+            order.append(marker_id)
+        merged[marker_id] = marker
+    return [merged[marker_id] for marker_id in order]
+
+
 def refresh_city_api(
     city: str,
     cache_directory: Path,
@@ -146,6 +189,7 @@ def refresh_city_api(
     timeout_seconds: int = 30,
     session: requests.Session | None = None,
     throttle: RequestThrottle | None = None,
+    incremental: bool = False,
 ) -> dict[str, Any]:
     """Refresh one city through the authenticated paginated Markers API."""
 
@@ -155,23 +199,34 @@ def refresh_city_api(
     if not access_token:
         raise ValueError("A Street Art Cities access token is required")
     client = session or requests.Session()
+    cache_path = cache_directory / f"{city}.json"
+    previous: list[dict[str, Any]] = []
+    updated_since: str | None = None
+    if incremental:
+        resumable = _incremental_cursor(cache_path)
+        if resumable is not None:
+            updated_since, previous = resumable
+    started_at = datetime.now(timezone.utc).isoformat()
     markers: list[dict[str, Any]] = []
     page = 1
     total: int | None = None
     while total is None or len(markers) < total:
         if throttle is not None:
             throttle.wait()
+        params: dict[str, Any] = {
+            "city": city,
+            "type": "artwork",
+            "status": "all",
+            "sort": "oldest",
+            "page": page,
+            "perPage": 100,
+        }
+        if updated_since:
+            params["updatedSince"] = updated_since
         try:
             response = client.get(
                 MARKERS_SEARCH_URL,
-                params={
-                    "city": city,
-                    "type": "artwork",
-                    "status": "all",
-                    "sort": "oldest",
-                    "page": page,
-                    "perPage": 100,
-                },
+                params=params,
                 headers={
                     "Authorization": f"Bearer {access_token}",
                     "User-Agent": USER_AGENT,
@@ -215,14 +270,20 @@ def refresh_city_api(
                 )
             break
         page += 1
+    changed = len(markers)
+    if updated_since:
+        markers = _merge_markers(previous, markers)
     payload = {
         "version": 1,
         "city": city,
         "source": "oauth-markers-api",
         "refreshed_at": datetime.now(timezone.utc).isoformat(),
+        "synced_at": started_at,
+        "incremental": bool(updated_since),
+        "changed_since_last_sync": changed if updated_since else None,
         "markers": markers,
     }
-    _atomic_json(cache_directory / f"{city}.json", payload)
+    _atomic_json(cache_path, payload)
     return payload
 
 
