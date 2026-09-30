@@ -289,15 +289,21 @@ class WebTests(unittest.TestCase):
         response = self.client.post("/api/artists", json={
             "tag": "New Artist",
             "slug": "new-artist",
+            "name": "New Artist SAC",
             "instagram": "@new.artist",
         })
 
         self.assertEqual(200, response.status_code, response.get_data(as_text=True))
         self.assertTrue(response.get_json()["added"])
         artists = self.root / "data" / "artists.csv"
+        written = artists.read_text(encoding="utf-8")
         self.assertIn(
-            "New Artist;new-artist;new.artist;confirmed",
-            artists.read_text(encoding="utf-8"),
+            "tag;streetartcities_slug;streetartcities_name;instagram;status",
+            written,
+        )
+        self.assertIn(
+            "New Artist;new-artist;New Artist SAC;new.artist;confirmed",
+            written,
         )
         duplicate = self.client.post("/api/artists", json={
             "tag": "new artist",
@@ -305,6 +311,39 @@ class WebTests(unittest.TestCase):
             "instagram": "new.artist",
         })
         self.assertFalse(duplicate.get_json()["added"])
+
+    def test_display_name_requires_a_slug(self):
+        response = self.client.post("/api/artists", json={
+            "tag": "Nameless",
+            "slug": "",
+            "name": "Some Display Name",
+        })
+
+        self.assertEqual(400, response.status_code)
+
+    def test_legacy_artist_rows_gain_the_name_column_on_append(self):
+        artists = self.root / "data" / "artists.csv"
+        artists.parent.mkdir(parents=True, exist_ok=True)
+        artists.write_text(
+            "tag;streetartcities_slug;instagram;status\n"
+            "Old Artist;old-artist;old.artist;confirmed\n",
+            encoding="utf-8",
+        )
+
+        response = self.client.post("/api/artists", json={
+            "tag": "Fresh Artist",
+            "slug": "fresh-artist",
+            "name": "Fresh Artist",
+        })
+
+        self.assertEqual(200, response.status_code, response.get_data(as_text=True))
+        written = artists.read_text(encoding="utf-8")
+        self.assertIn(
+            "tag;streetartcities_slug;streetartcities_name;instagram;status",
+            written,
+        )
+        self.assertIn("Old Artist;old-artist;;old.artist;confirmed", written)
+        self.assertIn("Fresh Artist;fresh-artist;Fresh Artist;;confirmed", written)
 
     def test_preview_gates_and_applies_same_source_gps_plan(self):
         preview = self.preview()

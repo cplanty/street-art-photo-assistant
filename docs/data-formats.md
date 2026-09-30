@@ -5,11 +5,30 @@
 `data/artists.csv` is UTF-8 and semicolon-separated:
 
 ```text
-tag;streetartcities_slug;instagram;status
+tag;streetartcities_slug;streetartcities_name;instagram;status
 ```
 
-The local tag controls photo metadata. Provider slug and Instagram values are
-optional for user-added rows.
+The local tag controls photo metadata. Provider slug, provider name, and
+Instagram values are optional for user-added rows.
+
+`streetartcities_slug` and `streetartcities_name` are deliberately separate and
+are never interchangeable:
+
+- `streetartcities_slug` is **identity only**. It is the join key against
+  Street Art Cities data and the sole input to the
+  `https://streetartcities.com/artists/<slug>` deep link. It is never rendered.
+- `streetartcities_name` is **display only**. It holds the provider display
+  name shown in candidate evidence, and it can be compared case-insensitively
+  with a marker's artist string when a response carries no slug. It is never
+  used to build a link or to establish identity.
+
+A row may carry a slug without a name; the review UI then falls back to the
+marker's own artist string, and then to the local tag. A name without a slug is
+rejected, because a display name alone establishes no provider identity.
+
+Rows written before this column existed remain valid: the missing value is read
+as empty, and the header is rewritten with the column the next time a row is
+appended.
 
 ## Normalized photo
 

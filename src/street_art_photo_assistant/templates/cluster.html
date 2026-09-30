@@ -32,6 +32,9 @@
         <a href="https://streetartcities.com/artists" target="_blank" rel="noopener">Find artist on SAC ↗</a>
         <input id="artist-csv-slug" placeholder="for example: le-cyklop">
       </label>
+      <label>Street Art Cities name
+        <input id="artist-csv-name" placeholder="display name, for example: Le CyKlop">
+      </label>
       <label>Instagram handle
         <a href="https://www.instagram.com/explore/" target="_blank" rel="noopener">Find profile on Instagram ↗</a>
         <input id="artist-csv-instagram" placeholder="without @">
@@ -169,7 +172,7 @@
           <article class="sac-candidate">
             {% if candidate.cached_image %}<a href="{{ url_for('reference', path=candidate.cached_image) }}" target="_blank" rel="noopener"><img src="{{ url_for('reference', path=candidate.cached_image) }}" alt="Street Art Cities reference"></a>{% endif %}
             <div>
-              <h3>{{ candidate.artist or candidate.title or candidate.marker_id }}</h3>
+              <h3>{{ candidate.artist_display_name or candidate.artist or candidate.title or candidate.marker_id }}</h3>
               <p>{{ candidate.distance_m }} m · <strong class="sac-status sac-status-{{ candidate.status|lower }}">{{ candidate.status }}</strong>{% if candidate.tag_match %} · artist match{% endif %}</p>
               {% if candidate.visual_similarity is defined and candidate.visual_similarity is not none %}<p>Visual similarity: {{ '%.3f'|format(candidate.visual_similarity) }}</p>{% endif %}
               {% if candidate.visual_error %}<p class="muted">Reference image unavailable: {{ candidate.visual_error }}</p>{% endif %}
@@ -207,6 +210,11 @@ const candidateSlugsByName = new Map(
   ((cluster.street_art_cities || {}).candidates || [])
     .filter(candidate => candidate.artist && candidate.artist_slug)
     .map(candidate => [candidate.artist.toLocaleLowerCase(), candidate.artist_slug])
+);
+const candidateNamesByName = new Map(
+  ((cluster.street_art_cities || {}).candidates || [])
+    .filter(candidate => candidate.artist && candidate.artist_slug)
+    .map(candidate => [candidate.artist.toLocaleLowerCase(), candidate.artist])
 );
 const allPhotoPaths = [...cluster.photos, ...cluster.context_photos].map(photo => photo.path);
 let pendingGpsPlan = null;
@@ -475,6 +483,7 @@ function maybeAddArtistToCsv(tag) {
     const dialog = document.getElementById('artist-csv-dialog');
     const tagInput = document.getElementById('artist-csv-tag');
     const slugInput = document.getElementById('artist-csv-slug');
+    const nameInput = document.getElementById('artist-csv-name');
     const instagramInput = document.getElementById('artist-csv-instagram');
     const error = document.getElementById('artist-csv-error');
     let settled = false;
@@ -486,6 +495,7 @@ function maybeAddArtistToCsv(tag) {
     };
     tagInput.value = tag;
     slugInput.value = candidateSlugsByName.get(tag.toLocaleLowerCase()) || '';
+    nameInput.value = candidateNamesByName.get(tag.toLocaleLowerCase()) || '';
     instagramInput.value = '';
     error.textContent = '';
     document.getElementById('artist-csv-cancel').onclick = finish;
@@ -498,6 +508,7 @@ function maybeAddArtistToCsv(tag) {
         await api('/api/artists', {
           tag: tagInput.value.trim(),
           slug: slugInput.value.trim(),
+          name: nameInput.value.trim(),
           instagram: instagramInput.value.trim()
         });
         knownArtistTags.add(tagInput.value.trim().toLocaleLowerCase());

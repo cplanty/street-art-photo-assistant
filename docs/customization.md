@@ -55,9 +55,11 @@ apply endpoints while keeping preview and reports available.
 
 `data/artists.csv` remains the public tag-to-provider mapping. After a tag plan
 adds a non-internal tag that is not already present, the reviewer offers an
-**Add to artists.csv** helper for confirming its Street Art Cities slug and
-Instagram handle. The CSV update is atomic; `_`-prefixed workflow tags are
-never offered for insertion.
+**Add to artists.csv** helper for confirming its Street Art Cities slug,
+Street Art Cities display name, and Instagram handle. Both provider fields are
+prefilled from the nearby candidate whose artist string matches the tag. The
+CSV update is atomic; `_`-prefixed workflow tags are never offered for
+insertion.
 
 ## Provider boundary
 

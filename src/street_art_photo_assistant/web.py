@@ -127,6 +127,7 @@ def _artist_tags(
         for row in csv.DictReader(stream, delimiter=";"):
             tag = str(row.get("tag") or "").strip()
             slug = str(row.get("streetartcities_slug") or "").strip()
+            name = str(row.get("streetartcities_name") or "").strip()
             instagram = str(row.get("instagram") or "").strip()
             if not tag:
                 continue
@@ -134,8 +135,10 @@ def _artist_tags(
             if slug:
                 by_slug.setdefault(slug, []).append(tag)
                 details = details_by_slug.setdefault(
-                    slug, {"tag": tag, "instagram_url": ""}
+                    slug, {"tag": tag, "name": "", "instagram_url": ""}
                 )
+                if name and not details["name"]:
+                    details["name"] = name
                 if instagram and not details["instagram_url"]:
                     try:
                         handle = _instagram_handle(instagram)
@@ -153,18 +156,34 @@ def _append_artist(
     *,
     tag: str,
     slug: str,
+    name: str = "",
     instagram: str,
 ) -> bool:
     tag = tag.strip()
     slug = slug.strip().lower()
+    name = name.strip()
     if not tag or len(tag) > 200 or "\n" in tag or "\r" in tag:
         raise ValueError("Artist tag is required and must fit on one line")
     if tag.startswith("_"):
         raise ValueError("Internal tags are not added to artists.csv")
     if slug and not ARTIST_SLUG_RE.fullmatch(slug):
         raise ValueError("Street Art Cities slug is invalid")
+    if len(name) > 200 or "\n" in name or "\r" in name:
+        raise ValueError(
+            "Street Art Cities name must fit on one line"
+        )
+    if name and not slug:
+        raise ValueError(
+            "Street Art Cities name requires a slug"
+        )
     handle = _instagram_handle(instagram)
-    fields = ["tag", "streetartcities_slug", "instagram", "status"]
+    fields = [
+        "tag",
+        "streetartcities_slug",
+        "streetartcities_name",
+        "instagram",
+        "status",
+    ]
     rows: list[dict[str, str]] = []
     if path.is_file():
         with path.open(encoding="utf-8-sig", newline="") as stream:
@@ -177,6 +196,7 @@ def _append_artist(
     rows.append({
         "tag": tag,
         "streetartcities_slug": slug,
+        "streetartcities_name": name,
         "instagram": handle,
         "status": "confirmed" if slug else "",
     })
@@ -592,6 +612,7 @@ def create_app(
             artists_path,
             tag=str(payload.get("tag") or ""),
             slug=str(payload.get("slug") or ""),
+            name=str(payload.get("name") or ""),
             instagram=str(payload.get("instagram") or ""),
         )
         return jsonify({
@@ -837,6 +858,9 @@ def create_app(
             candidate["artist_page_url"] = (
                 f"https://streetartcities.com/artists/{quote(slug, safe='')}"
                 if slug else None
+            )
+            candidate["artist_display_name"] = (
+                details.get("name") or str(candidate.get("artist") or "") or None
             )
             candidate["instagram_url"] = details.get("instagram_url") or None
             for tag in tags_by_slug.get(
