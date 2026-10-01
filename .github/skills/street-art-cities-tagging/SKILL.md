@@ -100,6 +100,23 @@ For audits or edits involving creation dates:
 - Never infer a missing date from upload time, marker creation time, EXIF time,
   or nearby artworks. Use only the date explicitly approved by the user.
 
+## Description enrichment
+
+For audits or edits involving artwork descriptions:
+
+- SAC stores the description in the core `description` field, not under
+  `attributes`.
+- Treat `null`, an empty string, and empty localized public-snapshot shapes such
+  as `{"en": ""}` as equivalent empty descriptions during stale-plan
+  preflight. Prefer `htmlDescription` when copying a formatted reference
+  description into the Edits API's HTML-string field.
+- Preserve every non-empty description. Never replace artist-specific text
+  with a generic event description.
+- Copy the approved reference HTML exactly, including paragraph boundaries,
+  punctuation, accents, measurements, dates, and named places.
+- Filter explicitly to artwork markers. Do not apply artwork descriptions or
+  missing-artist checks to festival, venue, or other place markers.
+
 ## Known UploadAssistant fields
 
 The legacy UploadAssistant already provides these SAC fields. Reuse the same

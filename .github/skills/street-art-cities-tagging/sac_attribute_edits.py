@@ -24,6 +24,7 @@ PREVIEW_SCOPES = ("markers:read", "edits:read")
 APPLY_SCOPES = ("markers:read", "edits:write", "edits:read")
 PLAN_VERSION = 1
 USER_AGENT = "StreetArtPhotoAssistant-SAC-Tagging-Skill/1"
+SCALAR_CORE_PATHS = {"description"}
 
 
 @dataclass(frozen=True)
@@ -115,6 +116,17 @@ def value_at_path(marker: dict[str, Any], path: str) -> object:
             return None
         value = value.get(part)
     return value
+
+
+def scalar_values_equal(path: str, actual: object, expected: object) -> bool:
+    if path == "description":
+        def description_text(value: object) -> str:
+            if isinstance(value, dict):
+                return " ".join(str(item or "") for item in value.values()).strip()
+            return str(value or "").strip()
+
+        return description_text(actual) == description_text(expected)
+    return actual == expected
 
 
 def missing_values(existing: Iterable[str], desired: Iterable[str]) -> list[str]:
@@ -397,11 +409,16 @@ def validate_scalar_plan(plan: dict[str, Any]) -> list[dict[str, Any]]:
         for path, value in actions.items():
             if (
                 not isinstance(path, str)
-                or not path.startswith("attributes.")
+                or (
+                    not path.startswith("attributes.")
+                    and path not in SCALAR_CORE_PATHS
+                )
                 or not isinstance(value, str)
                 or not value
             ):
-                raise ValueError("Scalar actions must set non-empty attributes")
+                raise ValueError(
+                    "Scalar actions must set an allowed non-empty field"
+                )
             if path not in current:
                 raise ValueError(f"Scalar plan has no current value for {path}")
             if current[path] not in (None, ""):
@@ -464,7 +481,7 @@ def apply_scalar_plan(
         actions = target["actions"]
         for path, expected in target["current"].items():
             actual = value_at_path(marker, path)
-            if actual != expected:
+            if not scalar_values_equal(path, actual, expected):
                 raise RuntimeError(
                     f"Stale plan: {path} changed on marker {target_id}"
                 )
