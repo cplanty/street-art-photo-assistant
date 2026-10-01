@@ -109,6 +109,10 @@ class WebTests(unittest.TestCase):
         self.assertIn('id="run-progress"', page)
         self.assertIn('id="recent-runs-body"', page)
         self.assertIn("refreshRecentRuns", page)
+        self.assertIn(
+            'class="button success" href="/runs/${encodeURIComponent(run.id)}"',
+            page,
+        )
         self.assertIn("Generate diagnostic package", page)
         self.assertIn(
             "Preview complete. You can now generate report",

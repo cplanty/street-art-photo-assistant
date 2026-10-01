@@ -655,7 +655,7 @@ async function pollRun() {
     byId('run-warnings').innerHTML = (progress.warnings || [])
       .map(warning => `<li>${escapeHtml(warning)}</li>`).join('');
     byId('run-message').innerHTML = run.status === 'complete'
-      ? `Complete. <a href="/runs/${encodeURIComponent(run.id)}" target="_blank" rel="noopener">Open report</a>`
+      ? `Complete. <a class="button success" href="/runs/${encodeURIComponent(run.id)}" target="_blank" rel="noopener">Open report</a>`
       : `${escapeHtml(run.status)} — ${escapeHtml(run.stage)}`;
     byId('run-log').hidden = !run.log;
     byId('run-log').textContent = run.log || '';
