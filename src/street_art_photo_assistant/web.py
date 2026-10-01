@@ -1164,10 +1164,25 @@ def create_app(
         direction = str(request.args.get("dir") or "asc")
         if direction not in {"asc", "desc"}:
             direction = "asc"
+        clusters = ordered_clusters(run_id, sort, direction)
+        for cluster in clusters:
+            paths = {
+                str(photo["path"])
+                for photo in [
+                    *cluster["photos"],
+                    *cluster["context_photos"],
+                ]
+            }
+            submissions = sac_submissions_for_paths(paths)
+            cluster["_pending_sac_submissions"] = [
+                submission
+                for submission in submissions
+                if submission["status"] == "submitted"
+            ]
         return render_template(
             "run.html",
             manifest=manifest,
-            clusters=ordered_clusters(run_id, sort, direction),
+            clusters=clusters,
             sort=sort,
             direction=direction,
         )

@@ -44,8 +44,16 @@
           <td>{{ cluster.first_capture or '—' }}{% if cluster.last_capture and cluster.last_capture != cluster.first_capture %}<br><span class="muted">to {{ cluster.last_capture }}</span>{% endif %}</td>
           <td>{{ cluster.photos|length }} primary<br><span class="muted">{{ cluster.context_photos|length }} context</span></td>
           <td>{% if cluster.latitude is not none %}{{ '%.6f'|format(cluster.latitude) }}, {{ '%.6f'|format(cluster.longitude) }}{% else %}No GPS{% endif %}</td>
-          <td><span class="sac-summary-status sac-summary-status-{{ sac_status }}">{{ sac_status }}</span></td>
-          <td>{{ cluster.street_art_cities.recommendation if cluster.street_art_cities else 'Cluster review' }}</td>
+          <td>
+            <span class="sac-summary-status sac-summary-status-{{ sac_status }}">{{ sac_status }}</span>
+            {% if cluster._pending_sac_submissions %}<span class="sac-summary-status sac-summary-status-pending">pending approval</span>{% endif %}
+          </td>
+          <td>
+            {{ cluster.street_art_cities.recommendation if cluster.street_art_cities else 'Cluster review' }}
+            {% for submission in cluster._pending_sac_submissions %}
+              · <a href="{{ submission.review_url }}" target="_blank" rel="noopener noreferrer">Pending SAC proposal ↗</a>
+            {% endfor %}
+          </td>
         </tr>
       {% else %}
         <tr><td colspan="8" class="muted">No clusters.</td></tr>

@@ -600,6 +600,18 @@ class WebTests(unittest.TestCase):
             "sac-summary-status-review",
             updated_dashboard.get_data(as_text=True),
         )
+        self.assertIn(
+            "sac-summary-status-pending",
+            updated_dashboard.get_data(as_text=True),
+        )
+        self.assertIn(
+            "Pending SAC proposal",
+            updated_dashboard.get_data(as_text=True),
+        )
+        self.assertIn(
+            review_url,
+            updated_dashboard.get_data(as_text=True),
+        )
         detail = self.client.get(
             f"/runs/{started['id']}/clusters/{cluster_id}"
         )

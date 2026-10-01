@@ -160,6 +160,8 @@ A submitted edit shows a **Pending SAC approval** warning and suppresses the
 duplicate **Push to SAC** action. **Refresh SAC status** uses
 `GET /api/edits/mine`, which returns the connected user's own edits even when
 they cannot approve them, and updates the receipt to accepted or rejected.
+The run dashboard also marks matching clusters with a **pending approval**
+badge and links directly to the submitted edit.
 
 ## Runs
 
