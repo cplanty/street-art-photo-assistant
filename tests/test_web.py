@@ -555,6 +555,7 @@ class WebTests(unittest.TestCase):
                 "status": "active",
                 "tag_match": True,
                 "cached_image": None,
+                "visual_similarity": 0.891,
             }],
         }
         tagged_paths = [
@@ -606,6 +607,9 @@ class WebTests(unittest.TestCase):
         self.assertIn("Google Maps", detail_page)
         self.assertIn("Street View", detail_page)
         self.assertIn("sac-status-active", detail_page)
+        self.assertIn("visual-similarity-strong", detail_page)
+        self.assertIn("89.1%", detail_page)
+        self.assertNotIn("Visual similarity: 0.891", detail_page)
         self.assertIn("Test Artist - Test marker", detail_page)
         self.assertIn("SAC artist", detail_page)
         self.assertIn("Instagram", detail_page)

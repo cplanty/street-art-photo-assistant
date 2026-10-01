@@ -193,7 +193,18 @@
               {% set candidate_title = candidate.title %}
               <h3>{% if candidate_artist and candidate_title %}{{ candidate_artist }} - {{ candidate_title }}{% else %}{{ candidate_artist or candidate_title or candidate.marker_id }}{% endif %}</h3>
               <p>{{ candidate.distance_m }} m · <strong class="sac-status sac-status-{{ candidate.status|lower }}">{{ candidate.status }}</strong>{% if candidate.tag_match %} · artist match{% endif %}</p>
-              {% if candidate.visual_similarity is defined and candidate.visual_similarity is not none %}<p>Visual similarity: {{ '%.3f'|format(candidate.visual_similarity) }}</p>{% endif %}
+              {% if candidate.visual_similarity is defined and candidate.visual_similarity is not none %}
+                {% if candidate.visual_similarity < 0.25 %}
+                  {% set similarity_level = 'low' %}
+                {% elif candidate.visual_similarity < 0.5 %}
+                  {% set similarity_level = 'moderate' %}
+                {% elif candidate.visual_similarity < 0.75 %}
+                  {% set similarity_level = 'good' %}
+                {% else %}
+                  {% set similarity_level = 'strong' %}
+                {% endif %}
+                <p>Visual similarity: <span class="visual-similarity visual-similarity-{{ similarity_level }}">{{ '%.1f%%'|format(candidate.visual_similarity * 100) }}</span></p>
+              {% endif %}
               {% if candidate.visual_error %}<p class="muted">Reference image unavailable: {{ candidate.visual_error }}</p>{% endif %}
               <p class="evidence-links">
                 <a href="{{ candidate.url }}" target="_blank" rel="noopener noreferrer">SAC marker ↗</a>

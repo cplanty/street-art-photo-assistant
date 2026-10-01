@@ -130,6 +130,8 @@ Street Art Cities candidate status is green for active markers and red for
 removed markers. Each candidate links to its marker, its SAC artist page when
 an artist slug exists, and the artist's Instagram profile when that handle is
 available in the combined artist catalogues.
+Visual similarity is shown as a percentage: red below 25%, orange below 50%,
+light green below 75%, and strong green from 75% upward.
 The cluster dashboard uses green for `likely-present`/`present`, amber for
 `review`, blue for `likely-new`, and grey for offline reports.
 

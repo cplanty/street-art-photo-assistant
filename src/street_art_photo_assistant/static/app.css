@@ -457,6 +457,35 @@ code { overflow-wrap: anywhere; }
 }
 .sac-status-active { color: #1a7f37; }
 .sac-status-removed { color: #cf222e; }
+.visual-similarity {
+  display: inline-block;
+  min-width: 3.8em;
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  text-align: center;
+  font-weight: 700;
+}
+.visual-similarity-low {
+  color: #82071e;
+  background: #ffebe9;
+  border-color: #ff8182;
+}
+.visual-similarity-moderate {
+  color: #7d4e00;
+  background: #fff1e5;
+  border-color: #fb8f44;
+}
+.visual-similarity-good {
+  color: #116329;
+  background: #dafbe1;
+  border-color: #82d990;
+}
+.visual-similarity-strong {
+  color: #ffffff;
+  background: #1a7f37;
+  border-color: #116329;
+}
 .evidence-links {
   display: flex;
   flex-wrap: wrap;
