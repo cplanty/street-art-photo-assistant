@@ -36,6 +36,7 @@
       <tbody>
       {% for cluster in clusters %}
         {% set first = (cluster.photos + cluster.context_photos)|first %}
+        {% set sac_status = cluster.street_art_cities.status if cluster.street_art_cities else 'offline' %}
         <tr>
           <td><a href="{{ url_for('cluster_review', run_id=manifest.id, cluster_id=cluster.id, sort=sort, dir=direction) }}">{{ cluster._index }}</a></td>
           <td>{% if first %}<a href="{{ url_for('cluster_review', run_id=manifest.id, cluster_id=cluster.id, sort=sort, dir=direction) }}"><img class="table-thumb" src="{{ url_for('photo', path=first.path) }}" alt=""></a>{% endif %}</td>
@@ -43,7 +44,7 @@
           <td>{{ cluster.first_capture or '—' }}{% if cluster.last_capture and cluster.last_capture != cluster.first_capture %}<br><span class="muted">to {{ cluster.last_capture }}</span>{% endif %}</td>
           <td>{{ cluster.photos|length }} primary<br><span class="muted">{{ cluster.context_photos|length }} context</span></td>
           <td>{% if cluster.latitude is not none %}{{ '%.6f'|format(cluster.latitude) }}, {{ '%.6f'|format(cluster.longitude) }}{% else %}No GPS{% endif %}</td>
-          <td>{{ cluster.street_art_cities.status if cluster.street_art_cities else 'offline' }}</td>
+          <td><span class="sac-summary-status sac-summary-status-{{ sac_status }}">{{ sac_status }}</span></td>
           <td>{{ cluster.street_art_cities.recommendation if cluster.street_art_cities else 'Cluster review' }}</td>
         </tr>
       {% else %}

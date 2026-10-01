@@ -71,6 +71,35 @@ th, td { padding: 8px; border-bottom: 1px solid #d8dee4; text-align: left; }
 .cluster-table tbody tr:hover { background: #f6f8fa; }
 .cluster-table td { vertical-align: middle; }
 .cluster-table td a { color: inherit; text-decoration: none; }
+.sac-summary-status {
+  display: inline-block;
+  padding: 2px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sac-summary-status-likely-present,
+.sac-summary-status-present {
+  color: #116329;
+  background: #dafbe1;
+  border-color: #82d990;
+}
+.sac-summary-status-review {
+  color: #7d4e00;
+  background: #fff8c5;
+  border-color: #d4a72c;
+}
+.sac-summary-status-likely-new {
+  color: #0550ae;
+  background: #ddf4ff;
+  border-color: #54aeff;
+}
+.sac-summary-status-offline {
+  color: #57606a;
+  background: #f6f8fa;
+  border-color: #afb8c1;
+}
 .table-thumb { display: block; width: 96px; height: 72px; object-fit: contain; background: #eaeef2; }
 .log { max-height: 320px; overflow: auto; padding: 12px; color: #e6edf3; background: #0d1117; }
 .run-progress {

@@ -558,6 +558,11 @@ class WebTests(unittest.TestCase):
         (self.manager.run_root / started["id"] / "report.json").write_text(
             json.dumps(report), encoding="utf-8"
         )
+        updated_dashboard = self.client.get(f"/runs/{started['id']}")
+        self.assertIn(
+            "sac-summary-status-review",
+            updated_dashboard.get_data(as_text=True),
+        )
         detail = self.client.get(
             f"/runs/{started['id']}/clusters/{cluster_id}"
         )
