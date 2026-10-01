@@ -738,11 +738,7 @@ def create_app(
                 "scope": str(token_payload.get("scope") or ""),
                 "expires_at": now + expires_in,
             }
-            return render_template(
-                "login.html",
-                connected=True,
-                error=None,
-            )
+            return redirect(url_for("index", sac_connected="1"))
 
         client_id = str(
             current_config()["matching"].get("api_client_id") or ""

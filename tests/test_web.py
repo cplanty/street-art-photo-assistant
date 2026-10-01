@@ -109,6 +109,10 @@ class WebTests(unittest.TestCase):
         self.assertIn('id="run-progress"', page)
         self.assertIn('id="recent-runs-body"', page)
         self.assertIn("refreshRecentRuns", page)
+        self.assertIn("const previewStorageKey", page)
+        self.assertIn("sessionStorage.setItem(previewStorageKey", page)
+        self.assertIn("restoreSelectionPreview();", page)
+        self.assertIn("Preview restored. You can now generate report.", page)
         self.assertIn(
             'class="button success" href="/runs/${encodeURIComponent(run.id)}"',
             page,
@@ -201,8 +205,8 @@ class WebTests(unittest.TestCase):
                 "code": "one-use-code",
                 "state": query["state"][0],
             })
-        self.assertEqual(200, callback.status_code)
-        self.assertIn("Connected.", callback.get_data(as_text=True))
+        self.assertEqual(302, callback.status_code)
+        self.assertEqual("/?sac_connected=1", callback.headers["Location"])
         exchange.assert_called_once()
         self.assertNotIn(
             "test-access-token", callback.get_data(as_text=True)

@@ -171,4 +171,6 @@ When the OAuth Markers API is selected, connect Street Art Cities before
 generating the report. A disconnected start is rejected before a run is
 created; the generator hides its inactive progress panel and displays the
 reconnect requirement with a **Connect API** action instead of remaining at
-queued 0%.
+queued 0%. Successful authorization returns directly to the generator and
+restores the unchanged selection preview for the current browser tab, so the
+report can start without scanning the selection again.

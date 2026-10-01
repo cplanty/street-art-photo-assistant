@@ -250,6 +250,7 @@ let gpsPlanId = null;
 let autosaveTimer = null;
 let currentRun = {{ active_run_id|tojson }};
 const sacApiConnected = {{ sac_api_connected|tojson }};
+const previewStorageKey = 'sapa-selection-preview';
 
 const byId = id => document.getElementById(id);
 const lines = id => byId(id).value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
@@ -388,6 +389,7 @@ function writeForm() {
 function invalidate() {
   previewToken = null;
   gpsPlanId = null;
+  sessionStorage.removeItem(previewStorageKey);
   byId('run-button').disabled = true;
   byId('gps-preview-button').disabled = true;
   byId('gps-apply-button').disabled = true;
@@ -523,16 +525,38 @@ async function previewSelection() {
     const result = await api('/api/preview', {method: 'POST', body: JSON.stringify(config)});
     const preview = result.preview;
     previewToken = result.token;
+    sessionStorage.setItem(previewStorageKey, JSON.stringify({
+      token: previewToken,
+      preview
+    }));
     gpsPlanId = null;
-    byId('run-button').disabled = preview.selected === 0;
-    byId('gps-preview-button').disabled = preview.missing_gps === 0 || {{ config.read_only|tojson }};
-    byId('gps-apply-button').disabled = true;
-    byId('preview-result').innerHTML = `<p><strong>${preview.selected} selected</strong> of ${preview.scanned} scanned · ${preview.tagged} tagged · ${preview.untagged} untagged · ${preview.missing_gps} without GPS</p>
-      <p class="muted">${escapeHtml(preview.first_capture || 'no capture time')} to ${escapeHtml(preview.last_capture || '—')}</p>`;
+    renderSelectionPreview(preview);
     byId('preview-message').textContent = 'Preview complete. You can now generate report';
   } catch (error) {
     invalidate();
     byId('preview-message').textContent = error.message;
+  }
+}
+
+function renderSelectionPreview(preview) {
+  byId('run-button').disabled = preview.selected === 0;
+  byId('gps-preview-button').disabled =
+    preview.missing_gps === 0 || {{ config.read_only|tojson }};
+  byId('gps-apply-button').disabled = true;
+  byId('preview-result').innerHTML = `<p><strong>${preview.selected} selected</strong> of ${preview.scanned} scanned · ${preview.tagged} tagged · ${preview.untagged} untagged · ${preview.missing_gps} without GPS</p>
+    <p class="muted">${escapeHtml(preview.first_capture || 'no capture time')} to ${escapeHtml(preview.last_capture || '—')}</p>`;
+}
+
+function restoreSelectionPreview() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(previewStorageKey) || 'null');
+    if (!saved || !saved.token || !saved.preview) return;
+    previewToken = saved.token;
+    renderSelectionPreview(saved.preview);
+    byId('preview-message').textContent =
+      'Preview restored. You can now generate report.';
+  } catch {
+    sessionStorage.removeItem(previewStorageKey);
   }
 }
 
@@ -602,6 +626,7 @@ async function startRun() {
       body: JSON.stringify({config, preview_token: previewToken})
     });
     currentRun = result.run.id;
+    sessionStorage.removeItem(previewStorageKey);
     byId('run-cancel-button').disabled = false;
     pollRun();
   } catch (error) {
@@ -727,6 +752,11 @@ byId('run_label').addEventListener('input', () => {
 byId('auto_save').addEventListener('change', () => saveConfiguration(false));
 writeForm();
 renderSources();
+restoreSelectionPreview();
+if (new URLSearchParams(location.search).get('sac_connected') === '1') {
+  byId('config-message').textContent = 'Street Art Cities API connected.';
+  history.replaceState({}, '', location.pathname);
+}
 if (currentRun) {
   byId('run-progress-panel').hidden = false;
   byId('run-cancel-button').disabled = false;
