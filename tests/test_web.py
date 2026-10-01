@@ -503,6 +503,7 @@ class WebTests(unittest.TestCase):
         self.assertIn("Google Maps", detail_page)
         self.assertIn("Street View", detail_page)
         self.assertIn("sac-status-active", detail_page)
+        self.assertIn("Test Artist - Test marker", detail_page)
         self.assertIn("SAC artist", detail_page)
         self.assertIn("Instagram", detail_page)
         self.assertIn(
@@ -513,6 +514,17 @@ class WebTests(unittest.TestCase):
         self.assertIn('id="artist-csv-dialog"', detail_page)
         self.assertIn("maybeAddArtistToCsv", detail_page)
         self.assertIn("applyTagChange", detail_page)
+        self.assertIn('data-editor-key="cluster"', detail_page)
+        self.assertIn('data-editor-key="photo-0"', detail_page)
+        self.assertIn("tagFocusStorageKey", detail_page)
+        self.assertIn(
+            "sessionStorage.setItem(tagFocusStorageKey, focusKey)",
+            detail_page,
+        )
+        self.assertIn(
+            "item.dataset.editorKey === focusKey",
+            detail_page,
+        )
         self.assertNotIn("previewTagChange", detail_page)
         self.assertNotIn("Apply previewed tags", detail_page)
         self.assertIn("event.key !== 'Enter'", detail_page)

@@ -61,7 +61,7 @@
         </div>
         <div class="cluster-tag-tools">
           <label>Tag to add
-            <input id="cluster-tag-input" class="tag-editor" autocomplete="off" aria-autocomplete="list" placeholder="artist or free-form tag">
+            <input id="cluster-tag-input" class="tag-editor" data-editor-key="cluster" autocomplete="off" aria-autocomplete="list" placeholder="artist or free-form tag">
           </label>
           <button type="button" onclick="addInputTag(false)" {% if read_only %}disabled{% endif %}>Add to all</button>
           <button type="button" onclick="addInputTag(true)" {% if read_only %}disabled{% endif %}>Add to selected</button>
@@ -110,7 +110,7 @@
                 {% endfor %}
               </div>
               <div class="input-action">
-                <input class="photo-tag-input tag-editor" autocomplete="off" aria-autocomplete="list" placeholder="add tag…">
+                <input class="photo-tag-input tag-editor" data-editor-key="photo-{{ loop.index0 }}" autocomplete="off" aria-autocomplete="list" placeholder="add tag…">
                 <button type="button" onclick="addPhotoTag(this)" {% if read_only %}disabled{% endif %}>Add</button>
               </div>
               <div class="photo-file-actions">
@@ -176,7 +176,9 @@
           <article class="sac-candidate">
             {% if candidate.cached_image %}<a href="{{ url_for('reference', path=candidate.cached_image) }}" target="_blank" rel="noopener"><img src="{{ url_for('reference', path=candidate.cached_image) }}" alt="Street Art Cities reference"></a>{% endif %}
             <div>
-              <h3>{{ candidate.artist_display_name or candidate.artist or candidate.title or candidate.marker_id }}</h3>
+              {% set candidate_artist = candidate.artist_display_name or candidate.artist_name or candidate.artist %}
+              {% set candidate_title = candidate.title %}
+              <h3>{% if candidate_artist and candidate_title %}{{ candidate_artist }} - {{ candidate_title }}{% else %}{{ candidate_artist or candidate_title or candidate.marker_id }}{% endif %}</h3>
               <p>{{ candidate.distance_m }} m · <strong class="sac-status sac-status-{{ candidate.status|lower }}">{{ candidate.status }}</strong>{% if candidate.tag_match %} · artist match{% endif %}</p>
               {% if candidate.visual_similarity is defined and candidate.visual_similarity is not none %}<p>Visual similarity: {{ '%.3f'|format(candidate.visual_similarity) }}</p>{% endif %}
               {% if candidate.visual_error %}<p class="muted">Reference image unavailable: {{ candidate.visual_error }}</p>{% endif %}
@@ -221,6 +223,7 @@ const candidateNamesByName = new Map(
     .map(candidate => [candidate.artist.toLocaleLowerCase(), candidate.artist])
 );
 const allPhotoPaths = [...cluster.photos, ...cluster.context_photos].map(photo => photo.path);
+const tagFocusStorageKey = `sapa-tag-focus:${runId}:${clusterId}`;
 let pendingGpsPlan = null;
 let gpsMap = null;
 let gpsTarget = null;
@@ -259,7 +262,12 @@ function addInputTag(selectedOnly) {
   const input = document.getElementById('cluster-tag-input');
   const tag = input.value.trim();
   if (!tag) return;
-  applyTagChange(selectedOnly ? selectedPaths() : allPhotoPaths, [tag], []);
+  applyTagChange(
+    selectedOnly ? selectedPaths() : allPhotoPaths,
+    [tag],
+    [],
+    input.dataset.editorKey
+  );
 }
 
 function addPhotoTag(button) {
@@ -267,7 +275,12 @@ function addPhotoTag(button) {
   const input = photo.querySelector('.photo-tag-input');
   const tag = input.value.trim();
   if (!tag) return;
-  applyTagChange([photo.dataset.path], [tag], []);
+  applyTagChange(
+    [photo.dataset.path],
+    [tag],
+    [],
+    input.dataset.editorKey
+  );
 }
 
 function submitTagEditor(editor) {
@@ -446,7 +459,7 @@ function installTagAutocomplete() {
   window.addEventListener('resize', place);
 }
 
-async function applyTagChange(paths, add, remove) {
+async function applyTagChange(paths, add, remove, focusKey = '') {
   const container = document.getElementById('tag-plan');
   container.textContent = 'Updating tags…';
   try {
@@ -465,6 +478,7 @@ async function applyTagChange(paths, add, remove) {
     for (const tag of addedTags) {
       await maybeAddArtistToCsv(tag);
     }
+    if (focusKey) sessionStorage.setItem(tagFocusStorageKey, focusKey);
     location.reload();
   } catch (error) {
     container.textContent = error.message;
@@ -969,8 +983,13 @@ installTagAutocomplete();
 initResizers();
 initGpsMap();
 requestAnimationFrame(() => {
-  const firstEditor = document.querySelector('.tag-editor:not(:disabled)');
-  if (firstEditor) firstEditor.focus();
+  const editors = [...document.querySelectorAll('.tag-editor:not(:disabled)')];
+  const focusKey = sessionStorage.getItem(tagFocusStorageKey);
+  if (focusKey) sessionStorage.removeItem(tagFocusStorageKey);
+  const editor = editors.find(
+    item => item.dataset.editorKey === focusKey
+  ) || editors[0];
+  if (editor) editor.focus();
 });
 </script>
 </body>

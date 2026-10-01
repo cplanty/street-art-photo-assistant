@@ -1011,7 +1011,10 @@ def create_app(
                 if slug else None
             )
             candidate["artist_display_name"] = (
-                details.get("name") or str(candidate.get("artist") or "") or None
+                details.get("name")
+                or str(candidate.get("artist_name") or "")
+                or str(candidate.get("artist") or "")
+                or None
             )
             candidate["instagram_url"] = details.get("instagram_url") or None
             for tag in tags_by_slug.get(

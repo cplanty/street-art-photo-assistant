@@ -94,7 +94,8 @@ matches first. For example, `more` finds `Morèje`, `nô` prioritizes `Nô`, and
 `l'emp` or `lemp` finds `L_Empreinte_Jo_V`. Typing `_W` places `_Wall_` first,
 while `_U` prioritizes `_unknown`. Tab and Shift+Tab move directly between
 cluster/per-image tag editors, and the first tag editor receives focus whenever
-a cluster page opens.
+a cluster page opens. After Enter applies a tag and reloads the current cluster,
+focus returns to the same cluster or photo-specific editor for repeated entry.
 
 The × button removes an existing tag immediately. **Add**, **Add to all**, and
 **Add to selected** also write immediately; pressing Enter in a tag editor is
