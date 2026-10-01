@@ -30,9 +30,10 @@ application and use the **API test** controls on
 2. Select **Connect API**. This link opens `/login`, starts a fresh PKCE flow,
    and requests `collections:read`, `markers:read`, `artists:read`,
    `edits:read`, and `edits:write`.
-3. Allow the requested access on Street Art Cities. The callback returns to
-   `/login`; then return to the home page and confirm that every scope appears
-   in the connection status.
+3. Allow the requested access on Street Art Cities. The callback returns
+   directly to the generator; confirm that every scope appears in the
+   connection status. An unchanged selection preview is restored in the
+   current browser tab, so report generation can continue without rescanning.
 
 **Authorize again** can also start a fresh authorization without first
 disconnecting. Disconnecting is local because this test flow deliberately does
@@ -65,6 +66,10 @@ uploading. Each image uses the official two-step media flow:
 The local receipt is updated after every upload and after edit creation.
 Third-party OAuth edits always remain in the manual review queue; the app shows
 the returned `reviewUrl` and never accepts its own proposal.
+Matching cluster pages and dashboard rows show pending-approval warnings from
+these receipts, link to the review queue, and suppress duplicate proposals.
+**Refresh SAC status** queries the connected user's submissions through
+`GET /api/edits/mine` and records accepted or rejected status in the receipt.
 If SAC rejects authorization, the app includes SAC's safe error detail,
 discards that in-memory connection, and asks the user to reconnect. Retrying
 the unchanged proposal reuses image uploads already recorded in its receipt.
