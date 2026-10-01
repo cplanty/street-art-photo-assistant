@@ -155,6 +155,12 @@ retry. If SAC rejects an expired authorization during submission, reconnect
 the API and confirm the unchanged form again; the rejected token is discarded
 and completed image uploads are reused. OAuth tokens are never written to the receipt.
 
+Cluster review matches its photo paths against durable SAC creation receipts.
+A submitted edit shows a **Pending SAC approval** warning and suppresses the
+duplicate **Push to SAC** action. **Refresh SAC status** uses
+`GET /api/edits/mine`, which returns the connected user's own edits even when
+they cannot approve them, and updates the receipt to accepted or rejected.
+
 ## Runs
 
 Each run owns a directory containing its config snapshot, manifest, command,

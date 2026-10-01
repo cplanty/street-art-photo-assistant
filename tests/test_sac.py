@@ -23,6 +23,7 @@ from street_art_photo_assistant.sac import (
     create_pkce_pair,
     exchange_pkce_code,
     fetch_collections,
+    fetch_my_edits,
     load_artist_mapping,
     nearby_candidates,
     oauth_authorization_url,
@@ -228,6 +229,34 @@ class SACTests(unittest.TestCase):
                 {"city": "test-city"},
                 session=session,
             )
+
+    def test_fetches_owned_edits_by_id(self):
+        session = Mock()
+        session.get.return_value = FakeResponse({
+            "edits": [{
+                "id": "edit-1",
+                "status": "submitted",
+                "reviewUrl": (
+                    "https://streetartcities.com/community/review-queue/edit-1"
+                ),
+            }],
+        })
+
+        edits = fetch_my_edits(
+            "test-access-token",
+            edit_ids=["edit-1"],
+            session=session,
+        )
+
+        self.assertEqual("submitted", edits[0]["status"])
+        self.assertEqual(
+            {"ids": "edit-1"},
+            session.get.call_args.kwargs["params"],
+        )
+        self.assertEqual(
+            "Bearer " + "test-access-token",
+            session.get.call_args.kwargs["headers"]["Authorization"],
+        )
 
     def test_refresh_normalizes_and_caches_all_artwork_statuses(self):
         removed = {**self.marker_item(), "id": "marker-2", "status": "removed"}

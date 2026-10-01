@@ -573,6 +573,24 @@ class WebTests(unittest.TestCase):
         (self.manager.run_root / started["id"] / "report.json").write_text(
             json.dumps(report), encoding="utf-8"
         )
+        plan_root = self.manager.run_root / "_plans"
+        plan_root.mkdir(exist_ok=True)
+        review_url = (
+            "https://streetartcities.com/community/review-queue/pending-edit"
+        )
+        (plan_root / "sac-create-pending.json").write_text(json.dumps({
+            "version": 1,
+            "id": "sac-create-pending",
+            "kind": "sac-marker-creation",
+            "state": "submitted",
+            "approved": {"photos": [str(tagged_paths[0])]},
+            "edit": {
+                "id": "pending-edit",
+                "status": "submitted",
+                "reviewUrl": review_url,
+            },
+            "completed_at": "2026-10-01T19:00:00+00:00",
+        }), encoding="utf-8")
         updated_dashboard = self.client.get(f"/runs/{started['id']}")
         self.assertIn(
             "sac-summary-status-review",
@@ -618,6 +636,10 @@ class WebTests(unittest.TestCase):
             detail_page,
         )
         self.assertIn("https://www.instagram.com/test.artist/", detail_page)
+        self.assertIn("Pending SAC approval", detail_page)
+        self.assertIn(review_url, detail_page)
+        self.assertNotIn(">Push to SAC", detail_page)
+        self.assertIn("Connect API to refresh status", detail_page)
         self.assertIn('class="tag-artist-links"', detail_page)
         self.assertIn(
             'title="Open Test Artist on Street Art Cities"',
@@ -639,7 +661,6 @@ class WebTests(unittest.TestCase):
         )
         self.assertIn("maybeAddArtistToCsv", detail_page)
         self.assertIn("applyTagChange", detail_page)
-        self.assertIn('class="button success"', detail_page)
         self.assertIn('data-editor-key="cluster"', detail_page)
         self.assertIn('data-editor-key="photo-0"', detail_page)
         self.assertIn("tagFocusStorageKey", detail_page)
@@ -903,6 +924,21 @@ class WebTests(unittest.TestCase):
         self.assertEqual("submitted", receipt["state"])
         self.assertEqual("edit-1", receipt["edit"]["id"])
         self.assertNotIn("test-access-token", json.dumps(receipt))
+        with patch(
+            "street_art_photo_assistant.web.fetch_my_edits",
+            return_value=[{
+                **receipt["edit"],
+                "status": "accepted",
+            }],
+        ):
+            refreshed = self.client.post("/api/sac/edits/mine", json={})
+        self.assertEqual(200, refreshed.status_code)
+        self.assertEqual(1, refreshed.get_json()["updated"])
+        refreshed_receipt = json.loads(
+            Path(result["receipt"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual("accepted", refreshed_receipt["edit"]["status"])
+        self.assertIn("status_checked_at", refreshed_receipt)
 
     def test_proposals_exclude_tags_the_photos_already_carry(self):
         preview = self.preview()

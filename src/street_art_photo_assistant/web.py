@@ -49,6 +49,7 @@ from .sac import (
     cached_cities,
     create_pkce_pair,
     exchange_pkce_code,
+    fetch_my_edits,
     fetch_collections,
     oauth_authorization_url,
     refresh_city_artists,
@@ -516,6 +517,31 @@ def create_app(
             raise ValueError("Unknown or expired plan")
         return _load_json(path)
 
+    def sac_submissions_for_paths(paths: set[str]) -> list[dict[str, Any]]:
+        submissions = []
+        for path in plan_root.glob("sac-create-*.json"):
+            receipt = _load_json(path)
+            if receipt.get("kind") != "sac-marker-creation":
+                continue
+            approved_paths = set(
+                (receipt.get("approved") or {}).get("photos") or []
+            )
+            edit = receipt.get("edit")
+            if not paths.intersection(approved_paths) or not isinstance(edit, dict):
+                continue
+            submissions.append({
+                "id": str(edit.get("id") or ""),
+                "status": str(edit.get("status") or "submitted"),
+                "review_url": str(edit.get("reviewUrl") or ""),
+                "completed_at": str(receipt.get("completed_at") or ""),
+                "photos": sorted(approved_paths),
+            })
+        return sorted(
+            submissions,
+            key=lambda item: item["completed_at"],
+            reverse=True,
+        )
+
     def report_cluster(run_id: str, cluster_id: str) -> dict[str, Any]:
         report = manager.report(run_id)
         for cluster in report["clusters"]:
@@ -770,6 +796,54 @@ def create_app(
         state["sac_oauth_token"] = None
         state["sac_oauth_pending"].clear()
         return jsonify({"ok": True})
+
+    @app.post("/api/sac/edits/mine")
+    def refresh_sac_submissions():
+        if not _is_local_request():
+            abort(403)
+        token = state["sac_oauth_token"]
+        if token is None or float(token["expires_at"]) <= time.time():
+            raise ValueError(
+                "Connect the Street Art Cities API before refreshing "
+                "submitted edits"
+            )
+        scopes = set(str(token.get("scope") or "").split())
+        if "edits:read" not in scopes:
+            raise ValueError(
+                "Reconnect Street Art Cities to grant edits:read"
+            )
+        receipts: list[tuple[dict[str, Any], str]] = []
+        for path in plan_root.glob("sac-create-*.json"):
+            receipt = _load_json(path)
+            edit = receipt.get("edit")
+            if not isinstance(edit, dict) or not str(edit.get("id") or ""):
+                continue
+            receipts.append((receipt, str(edit["id"])))
+        refreshed = fetch_my_edits(
+            str(token["access_token"]),
+            edit_ids=[identifier for _receipt, identifier in receipts],
+        )
+        by_id = {
+            str(edit.get("id") or ""): edit
+            for edit in refreshed
+            if str(edit.get("id") or "")
+        }
+        updated = 0
+        for receipt, identifier in receipts:
+            current = by_id.get(identifier)
+            if current is None:
+                continue
+            receipt["edit"] = current
+            receipt["status_checked_at"] = (
+                datetime.now().astimezone().isoformat()
+            )
+            save_plan(receipt)
+            updated += 1
+        return jsonify({
+            "ok": True,
+            "edits": len(refreshed),
+            "updated": updated,
+        })
 
     @app.post("/api/config")
     def update_config():
@@ -1144,6 +1218,22 @@ def create_app(
             if tag not in autocomplete_tags:
                 autocomplete_tags.append(tag)
         photo_groups = [*cluster["photos"], *cluster["context_photos"]]
+        sac_submissions = sac_submissions_for_paths({
+            str(photo["path"]) for photo in photo_groups
+        })
+        blocked_submission_paths = {
+            path
+            for submission in sac_submissions
+            if submission["status"] in {"submitted", "accepted"}
+            for path in submission["photos"]
+        }
+        proposal_photo_path = (
+            str(photo_groups[0]["path"]) if photo_groups else ""
+        )
+        block_sac_proposal = any(
+            proposal_photo_path == path
+            for path in blocked_submission_paths
+        )
         links_by_folded_tag = {
             tag.casefold(): {
                 "sac": (
@@ -1167,6 +1257,9 @@ def create_app(
             ]
         for photo in photo_groups:
             present = {str(tag).casefold() for tag in photo["tags"]}
+            photo["block_sac_proposal"] = (
+                str(photo["path"]) in blocked_submission_paths
+            )
             photo["tag_links"] = {
                 tag: links_by_folded_tag[str(tag).casefold()]
                 for tag in photo["tags"]
@@ -1198,6 +1291,12 @@ def create_app(
                 for tag in common_tags
                 if str(tag).casefold() in links_by_folded_tag
             },
+            sac_submissions=sac_submissions,
+            block_sac_proposal=block_sac_proposal,
+            sac_api_connected=bool(
+                state["sac_oauth_token"]
+                and float(state["sac_oauth_token"]["expires_at"]) > time.time()
+            ),
             tag_proposals=cluster_proposals,
             previous_id=ids[(position - 1) % len(ids)],
             next_id=ids[(position + 1) % len(ids)],

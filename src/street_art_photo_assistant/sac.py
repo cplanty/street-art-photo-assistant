@@ -33,6 +33,7 @@ MARKERS_SEARCH_URL = BASE_URL + "/api/markers/search"
 ARTISTS_URL = BASE_URL + "/api/artists"
 MEDIA_UPLOAD_URL = BASE_URL + "/api/media/upload"
 EDITS_URL = BASE_URL + "/api/edits"
+EDITS_MINE_URL = EDITS_URL + "/mine"
 CITY_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 USER_AGENT = (
     f"StreetArtPhotoAssistant/{__version__} "
@@ -351,6 +352,61 @@ def _merge_markers(
             order.append(marker_id)
         merged[marker_id] = marker
     return [merged[marker_id] for marker_id in order]
+
+
+def fetch_my_edits(
+    access_token: str,
+    *,
+    edit_ids: Iterable[str] = (),
+    timeout_seconds: int = 30,
+    session: requests.Session | None = None,
+) -> list[dict[str, Any]]:
+    """Return edits submitted by the connected user, optionally by ID."""
+
+    if not access_token:
+        raise ValueError("A Street Art Cities access token is required")
+    identifiers = list(dict.fromkeys(
+        str(identifier).strip()
+        for identifier in edit_ids
+        if str(identifier).strip()
+    ))
+    batches = [
+        identifiers[index:index + 100]
+        for index in range(0, len(identifiers), 100)
+    ] or [[]]
+    client = session or requests.Session()
+    edits: list[dict[str, Any]] = []
+    for batch in batches:
+        try:
+            response = client.get(
+                EDITS_MINE_URL,
+                params={"ids": ",".join(batch)} if batch else None,
+                headers={
+                    "Authorization": "Bearer " + access_token,
+                    "User-Agent": USER_AGENT,
+                },
+                timeout=timeout_seconds,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except requests.RequestException as exc:
+            if getattr(getattr(exc, "response", None), "status_code", None) == 401:
+                raise _authorization_error(
+                    getattr(exc, "response", None),
+                    "submitted edit status",
+                ) from exc
+            raise RuntimeError(
+                f"Street Art Cities submitted-edits request failed: {exc}"
+            ) from exc
+        batch_edits = payload.get("edits") if isinstance(payload, dict) else None
+        if not isinstance(batch_edits, list) or any(
+            not isinstance(edit, dict) for edit in batch_edits
+        ):
+            raise ValueError(
+                "Street Art Cities returned invalid submitted edits"
+            )
+        edits.extend(batch_edits)
+    return edits
 
 
 def refresh_city_api(

@@ -18,8 +18,30 @@
   <header>
     <h1>{{ cluster.tag }}</h1>
     <p class="muted"><code>{{ cluster.id }}</code> · {{ cluster.photos|length }} primary · {{ cluster.context_photos|length }} context</p>
+    {% for submission in sac_submissions %}
+      <div class="sac-submission sac-submission-{{ submission.status }}">
+        {% if submission.status == 'submitted' %}
+          <strong>Pending SAC approval.</strong> This photo already has a submitted marker proposal.
+        {% elif submission.status == 'accepted' %}
+          <strong>SAC proposal accepted.</strong> Refresh marker data if it is not yet visible in the evidence.
+        {% elif submission.status == 'rejected' %}
+          <strong>SAC proposal rejected.</strong> Review the decision before submitting a replacement.
+        {% else %}
+          <strong>SAC proposal status: {{ submission.status }}.</strong>
+        {% endif %}
+        {% if submission.review_url %}<a href="{{ submission.review_url }}" target="_blank" rel="noopener noreferrer">Open SAC review ↗</a>{% endif %}
+      </div>
+    {% endfor %}
+    {% if sac_submissions %}
+      {% if sac_api_connected %}
+        <button type="button" onclick="refreshSacSubmissions()">Refresh SAC status</button>
+      {% else %}
+        <a class="button" href="{{ url_for('sac_login') }}">Connect API to refresh status</a>
+      {% endif %}
+      <span id="sac-submission-message" class="muted"></span>
+    {% endif %}
     {% set proposal_photo = (cluster.photos or cluster.context_photos)|first %}
-    {% if proposal_photo %}
+    {% if proposal_photo and not block_sac_proposal %}
       <a class="button success" href="{{ url_for('sac_proposal_review', run_id=run_id, cluster_id=cluster.id, photo=proposal_photo.path) }}" target="_blank" rel="noopener">Push to SAC ↗</a>
     {% endif %}
   </header>
@@ -129,7 +151,7 @@
                 <button type="button" onclick='openLocalPath("explorer", {{ photo.path|tojson }})'>Show in Explorer</button>
                 <button type="button" onclick='openLocalPath("open", {{ photo.path|tojson }})'>Open file</button>
                 <a class="button" href="{{ url_for('photo', path=photo.path) }}" target="_blank" rel="noopener">Full size ↗</a>
-                <a class="button success" href="{{ url_for('sac_proposal_review', run_id=run_id, cluster_id=cluster.id, photo=photo.path) }}" target="_blank" rel="noopener">Push to SAC ↗</a>
+                {% if not photo.block_sac_proposal %}<a class="button success" href="{{ url_for('sac_proposal_review', run_id=run_id, cluster_id=cluster.id, photo=photo.path) }}" target="_blank" rel="noopener">Push to SAC ↗</a>{% endif %}
               </div>
               <p class="muted path">{{ photo.path }}</p>
             </div>
@@ -514,6 +536,21 @@ async function openLocalPath(action, path) {
     await api('/api/open-local', {action, target: path});
   } catch (error) {
     alert(error.message);
+  }
+}
+
+async function refreshSacSubmissions() {
+  const message = document.getElementById('sac-submission-message');
+  message.textContent = 'Refreshing submitted edits…';
+  try {
+    await api('/api/sac/edits/mine', {
+      method: 'POST',
+      body: '{}'
+    });
+    location.reload();
+  } catch (error) {
+    message.className = 'error';
+    message.textContent = error.message;
   }
 }
 
