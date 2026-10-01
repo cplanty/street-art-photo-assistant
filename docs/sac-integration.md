@@ -1,8 +1,8 @@
 # Street Art Cities integration
 
 Street Art Photo Assistant is an independent community project. It is not
-affiliated with or endorsed by Street Art Cities, and it never publishes or
-modifies Street Art Cities content.
+affiliated with or endorsed by Street Art Cities. It can submit explicitly
+confirmed suggestions, but cannot directly publish or approve them.
 
 ## OAuth API test
 
@@ -12,9 +12,10 @@ enter the app's non-secret client ID in **Street Art Cities matching → API
 test**, and select **Connect API**. After consent, the callback validates the
 OAuth state and exchanges the one-use code with its PKCE verifier.
 
-The test requests `collections:read` for **Test collections request**,
-`markers:read` for the authenticated marker source, and `artists:read` for the
-artist catalogue refresh. The collections probe calls
+The application requests `collections:read` for **Test collections request**,
+`markers:read` for the authenticated marker source, `artists:read` for the
+artist catalogue refresh, and `edits:read edits:write` for manually reviewed
+new-artwork proposals. It never requests `edits:review`. The collections probe calls
 `GET https://streetartcities.com/api/collections` with the resulting bearer
 token. OAuth state, PKCE verifiers, and access tokens remain in process memory;
 they are not written to configuration, logs, runs, or caches and are discarded
@@ -27,7 +28,8 @@ application and use the **API test** controls on
 
 1. Select **Disconnect local session** to discard the current in-memory token.
 2. Select **Connect API**. This link opens `/login`, starts a fresh PKCE flow,
-   and requests `collections:read`, `markers:read`, and `artists:read`.
+   and requests `collections:read`, `markers:read`, `artists:read`,
+   `edits:read`, and `edits:write`.
 3. Allow the requested access on Street Art Cities. The callback returns to
    `/login`; then return to the home page and confirm that every scope appears
    in the connection status.
@@ -42,6 +44,27 @@ distributed with a desktop application when every installation is intended to
 use the same registered SAC app and redirect URL. It identifies this
 application registration—not every SAC API application—and controls the name,
 permissions, and redirect URLs shown during authorization.
+
+## New-artwork proposals
+
+**Push to SAC** opens a nonce-bound local review form in a new tab. Opening the
+form performs no upload and no Edits API request. The user can edit the complete
+marker payload, including selected and ordered images, attribution, location,
+city, title, description, artists, core tags, advanced attributes, and review
+comment.
+
+On confirmation, the server rejects expired forms, out-of-root files, stale
+fingerprints, invalid locations, and missing `edits:write` authorization before
+uploading. Each image uses the official two-step media flow:
+
+1. `GET /api/media/upload` requests a 15-minute presigned URL.
+2. The unchanged JPEG or PNG bytes are sent to that URL with `PUT`.
+3. The returned `https://streetartcities.com/media/` URL and derived sizes are
+   included in `POST /api/edits` with `entityType: marker` and no `entityId`.
+
+The local receipt is updated after every upload and after edit creation.
+Third-party OAuth edits always remain in the manual review queue; the app shows
+the returned `reviewUrl` and never accepts its own proposal.
 
 ## Marker sources
 

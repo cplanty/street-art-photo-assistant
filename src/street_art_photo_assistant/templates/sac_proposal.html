@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review SAC proposal — {{ cluster.tag }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+<main class="proposal-main">
+  <header class="page-header">
+    <div>
+      <h1>Review Street Art Cities proposal</h1>
+      <p class="muted">Nothing is uploaded or submitted until you confirm this form.</p>
+    </div>
+    <a class="button" href="{{ url_for('cluster_review', run_id=run_id, cluster_id=cluster.id) }}">Back to cluster</a>
+  </header>
+
+  {% if not connected %}
+  <section class="card proposal-warning">
+    <strong>Street Art Cities write access is not connected.</strong>
+    <p>Connect or reconnect in a separate tab, then refresh this page. Required scopes: <code>edits:read edits:write</code>.</p>
+    <a class="button primary" href="{{ url_for('sac_login') }}" target="_blank" rel="noopener">Connect Street Art Cities ↗</a>
+    {% if granted_scopes %}<p class="muted">Currently granted: {{ granted_scopes|join(', ') }}</p>{% endif %}
+  </section>
+  {% endif %}
+
+  <form id="proposal-form">
+    <input type="hidden" id="proposal-token" value="{{ proposal_token }}">
+
+    <section class="card">
+      <h2>Images</h2>
+      <p class="muted">Checked images will be uploaded in this order. The first is the main image.</p>
+      <div class="proposal-images">
+      {% for photo in photos %}
+        <label class="proposal-image">
+          <input type="checkbox" name="photo" value="{{ photo.path }}" {% if photo.path == selected_path %}checked{% endif %}>
+          <img src="{{ url_for('photo', path=photo.path) }}" alt="{{ photo.filename }}">
+          <span>{{ photo.filename }}{% if photo in cluster.context_photos %} · context{% endif %}</span>
+        </label>
+      {% endfor %}
+      </div>
+      <label>Photo attribution
+        <input id="attribution" placeholder="Name shown beside the uploaded photo">
+      </label>
+    </section>
+
+    <div class="two-columns proposal-columns">
+      <section class="card">
+        <h2>Artwork</h2>
+        <label>Title
+          <input id="title" maxlength="500" placeholder="Untitled when empty">
+        </label>
+        <label>Description
+          <textarea id="description" rows="14" maxlength="20000">{{ description }}</textarea>
+        </label>
+        <label>Street Art Cities tags
+          <textarea id="tags" rows="5" placeholder="One tag per line"></textarea>
+        </label>
+      </section>
+
+      <section class="card">
+        <h2>Location</h2>
+        <label>City slug
+          <input id="city" required value="{{ city }}" pattern="[a-z0-9][a-z0-9-]*" placeholder="paris">
+        </label>
+        <div class="form-row">
+          <label>Latitude
+            <input id="latitude" required type="number" step="any" min="-90" max="90" value="{{ latitude if latitude is not none else '' }}">
+          </label>
+          <label>Longitude
+            <input id="longitude" required type="number" step="any" min="-180" max="180" value="{{ longitude if longitude is not none else '' }}">
+          </label>
+        </div>
+
+        <h2>Artists</h2>
+        <p class="muted">Use an existing SAC artist ID, or clear it and enter a new exact artist name.</p>
+        <div id="artist-rows">
+          <div class="proposal-pair artist-row">
+            <input class="artist-id" value="{{ artist_slug }}" placeholder="existing SAC artist ID">
+            <input class="artist-title" value="{{ '' if artist_slug else artist_name }}" placeholder="new artist name">
+            <button type="button" onclick="this.parentElement.remove()">Remove</button>
+          </div>
+        </div>
+        <button type="button" onclick="addArtistRow()">Add artist</button>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>Advanced attributes</h2>
+      <p class="muted">Every value is editable JSON: use a quoted string such as <code>"Mural"</code>, a list such as <code>["France"]</code>, a number, or a boolean.</p>
+      <div id="attribute-rows">
+      {% for key, value in attributes %}
+        <div class="proposal-pair attribute-row">
+          <input class="attribute-key" value="{{ key }}" placeholder="attribute_key">
+          <input class="attribute-value" value="{{ value }}" placeholder='"value" or ["value"]'>
+          <button type="button" onclick="this.parentElement.remove()">Remove</button>
+        </div>
+      {% endfor %}
+      </div>
+      <button type="button" onclick="addAttributeRow()">Add attribute</button>
+    </section>
+
+    <section class="card">
+      <h2>Review note</h2>
+      <label>Comment for SAC reviewers
+        <textarea id="edit-comment" rows="3" placeholder="Explain where and when the artwork was observed"></textarea>
+      </label>
+      <p class="muted">Confirmation uploads the selected images and submits a third-party edit for manual review. It does not publish directly.</p>
+      <p id="proposal-error" class="error"></p>
+      <div id="proposal-result" class="proposal-result" hidden></div>
+      <button id="confirm-proposal" class="primary" type="submit" {% if not connected or read_only %}disabled{% endif %}>Confirm and send to SAC</button>
+      {% if read_only %}<p class="error">Read-only mode prevents submissions.</p>{% endif %}
+    </section>
+  </form>
+</main>
+
+<script>
+function addArtistRow() {
+  document.getElementById('artist-rows').insertAdjacentHTML('beforeend', `
+    <div class="proposal-pair artist-row">
+      <input class="artist-id" placeholder="existing SAC artist ID">
+      <input class="artist-title" placeholder="new artist name">
+      <button type="button" onclick="this.parentElement.remove()">Remove</button>
+    </div>`);
+}
+
+function addAttributeRow() {
+  document.getElementById('attribute-rows').insertAdjacentHTML('beforeend', `
+    <div class="proposal-pair attribute-row">
+      <input class="attribute-key" placeholder="attribute_key">
+      <input class="attribute-value" placeholder='"value" or ["value"]'>
+      <button type="button" onclick="this.parentElement.remove()">Remove</button>
+    </div>`);
+}
+
+function lineValues(value) {
+  return [...new Set(value.split(/\r?\n/).map(item => item.trim()).filter(Boolean))];
+}
+
+document.getElementById('proposal-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const error = document.getElementById('proposal-error');
+  const result = document.getElementById('proposal-result');
+  const button = document.getElementById('confirm-proposal');
+  error.textContent = '';
+  result.hidden = true;
+  const photos = [...document.querySelectorAll('input[name="photo"]:checked')].map(input => input.value);
+  if (!photos.length) {
+    error.textContent = 'Select at least one image.';
+    return;
+  }
+  const artists = [...document.querySelectorAll('.artist-row')].map(row => ({
+    id: row.querySelector('.artist-id').value.trim(),
+    title: row.querySelector('.artist-title').value.trim()
+  })).filter(artist => artist.id || artist.title);
+  const attributes = {};
+  try {
+    document.querySelectorAll('.attribute-row').forEach(row => {
+      const key = row.querySelector('.attribute-key').value.trim();
+      const raw = row.querySelector('.attribute-value').value.trim();
+      if (!key && !raw) return;
+      if (!key || !raw) throw new Error('Every advanced attribute needs both a key and a JSON value.');
+      if (Object.hasOwn(attributes, key)) throw new Error(`Advanced attribute "${key}" is duplicated.`);
+      attributes[key] = JSON.parse(raw);
+    });
+  } catch (exception) {
+    error.textContent = exception.message;
+    return;
+  }
+  const payload = {
+    proposal_token: document.getElementById('proposal-token').value,
+    photos,
+    city: document.getElementById('city').value,
+    latitude: document.getElementById('latitude').value,
+    longitude: document.getElementById('longitude').value,
+    title: document.getElementById('title').value,
+    description: document.getElementById('description').value,
+    tags: lineValues(document.getElementById('tags').value),
+    artists,
+    attributes,
+    attribution: document.getElementById('attribution').value,
+    edit_comment: document.getElementById('edit-comment').value
+  };
+  button.disabled = true;
+  button.textContent = 'Uploading and submitting…';
+  try {
+    const response = await fetch('/api/sac/proposals/submit', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    const reviewUrl = String(data.edit.reviewUrl || '');
+    result.replaceChildren();
+    const heading = document.createElement('strong');
+    heading.textContent = 'Proposal submitted for manual review.';
+    const status = document.createElement('p');
+    status.textContent = `Status: ${String(data.edit.status || 'submitted')}`;
+    const linkRow = document.createElement('p');
+    const link = document.createElement('a');
+    link.className = 'button primary';
+    link.href = reviewUrl;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = 'Open SAC review ↗';
+    linkRow.append(link);
+    result.append(heading, status, linkRow);
+    result.hidden = false;
+    button.textContent = 'Submitted';
+  } catch (exception) {
+    error.textContent = exception.message;
+    button.disabled = false;
+    button.textContent = 'Confirm and send to SAC';
+  }
+});
+</script>
+</body>
+</html>

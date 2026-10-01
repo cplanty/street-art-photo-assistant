@@ -125,6 +125,23 @@ removed markers. Each candidate links to its marker, its SAC artist page when
 an artist slug exists, and the artist's Instagram profile when that handle is
 available in `data/artists.csv`.
 
+## Propose a new Street Art Cities artwork
+
+Select **Push to SAC** on a cluster or one of its photos. A new local browser
+tab shows the complete proposal before any network write: ordered images,
+attribution, coordinates, city, title, description, artists, core tags,
+advanced attributes, and the reviewer comment are all editable.
+
+The form preselects only the photo used to open it. Artist identity and
+Instagram are joined through `data/artists.csv`; optional description and
+advanced defaults come from `paths.artist_descriptions`. Confirming the form
+revalidates every selected file fingerprint, requests SAC upload links, uploads
+the original bytes, and submits one marker-creation edit. Third-party edits
+remain submitted for manual review, and the result links to SAC's review queue.
+An interrupted submission retains its durable `_plans/sac-create-*.json`
+receipt so already uploaded images are not uploaded again on an unchanged
+retry. OAuth tokens are never written to the receipt.
+
 ## Runs
 
 Each run owns a directory containing its config snapshot, manifest, command,

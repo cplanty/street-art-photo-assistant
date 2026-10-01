@@ -174,7 +174,11 @@ class WebTests(unittest.TestCase):
         query = parse_qs(authorization.query)
         self.assertEqual("streetartcities.com", authorization.netloc)
         self.assertEqual(
-            ["collections:read markers:read artists:read"], query["scope"]
+            [
+                "collections:read markers:read artists:read "
+                "edits:read edits:write"
+            ],
+            query["scope"],
         )
         self.assertEqual(["S256"], query["code_challenge_method"])
 
@@ -514,6 +518,7 @@ class WebTests(unittest.TestCase):
         self.assertIn('id="artist-csv-dialog"', detail_page)
         self.assertIn("maybeAddArtistToCsv", detail_page)
         self.assertIn("applyTagChange", detail_page)
+        self.assertIn('class="button success"', detail_page)
         self.assertIn('data-editor-key="cluster"', detail_page)
         self.assertIn('data-editor-key="photo-0"', detail_page)
         self.assertIn("tagFocusStorageKey", detail_page)
@@ -551,6 +556,7 @@ class WebTests(unittest.TestCase):
         self.assertIn("[hidden] { display: none !important; }", stylesheet)
         self.assertIn(".sac-status-active { color: #1a7f37; }", stylesheet)
         self.assertIn(".sac-status-removed { color: #cf222e; }", stylesheet)
+        self.assertIn(".success { color: white; background: #1a7f37;", stylesheet)
         stylesheet_response.close()
         listed = self.client.get("/api/runs").get_json()["runs"]
         self.assertEqual(started["id"], listed[0]["id"])
@@ -614,6 +620,147 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(403, response.status_code)
         self.assertFalse(read_photo(self.missing, "Camera").has_gps)
+
+    def test_sac_proposal_reviews_before_upload_and_persists_receipt(self):
+        artists = self.root / "data" / "artists.csv"
+        artists.parent.mkdir(parents=True, exist_ok=True)
+        artists.write_text(
+            "tag;streetartcities_slug;streetartcities_name;instagram;status\n"
+            "Test Artist;test-artist;Test Artist;test.artist;confirmed\n",
+            encoding="utf-8",
+        )
+        descriptions = self.root / "data" / "artist_descriptions.json"
+        descriptions.write_text(json.dumps({
+            "Test Artist": {
+                "description": "Synthetic artist description.",
+                "default_attributes": {
+                    "artist_nationality": ["France"],
+                    "artwork_type": "Mural",
+                },
+            },
+        }), encoding="utf-8")
+        preview = self.preview()
+        started = self.client.post("/api/runs", json={
+            "config": self.config,
+            "preview_token": preview["token"],
+        }).get_json()["run"]
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            if self.manager.status(started["id"])["status"] not in {
+                "queued", "running"
+            }:
+                break
+            time.sleep(0.05)
+        report = self.manager.report(started["id"])
+        cluster = report["clusters"][0]
+        photo_path = cluster["photos"][0]["path"]
+        self.assertNotEqual("Test Artist", cluster["tag"])
+        apply_tag_edit_plan(
+            build_tag_edit_plan(
+                [Path(photo_path)],
+                add=["Test Artist"],
+            ),
+            allowed_roots=[self.photos],
+            change_log_path=self.root / "change.json",
+        )
+
+        with (
+            patch(
+                "street_art_photo_assistant.web.request_media_upload"
+            ) as request_upload,
+            patch(
+                "street_art_photo_assistant.web.submit_marker_creation"
+            ) as submit_creation,
+        ):
+            page = self.client.get(
+                f"/runs/{started['id']}/clusters/{cluster['id']}/sac-proposal",
+                query_string={"photo": photo_path},
+            )
+        self.assertEqual(200, page.status_code)
+        content = page.get_data(as_text=True)
+        self.assertIn("Nothing is uploaded or submitted", content)
+        self.assertIn('value="test-artist"', content)
+        self.assertIn("Synthetic artist description.", content)
+        self.assertIn("press,_media,_blog_link", content)
+        self.assertIn(
+            "https://www.instagram.com/test.artist/", content
+        )
+        self.assertIn("artist_nationality", content)
+        request_upload.assert_not_called()
+        submit_creation.assert_not_called()
+
+        state = self.app.config["ASSISTANT_STATE"]
+        proposal_token = next(iter(state["sac_proposals"]))
+        state["sac_oauth_token"] = {
+            "access_token": "test-access-token",
+            "scope": "edits:read edits:write",
+            "expires_at": time.time() + 3600,
+        }
+        review_url = (
+            "https://streetartcities.com/community/review-queue/edit-1"
+        )
+        with (
+            patch(
+                "street_art_photo_assistant.web.request_media_upload",
+                return_value={
+                    "key": "media/test/orig.jpg",
+                    "url": "https://uploads.example.test/signed",
+                    "publicUrl": (
+                        "https://streetartcities.com/media/test/orig.jpg"
+                    ),
+                },
+            ),
+            patch(
+                "street_art_photo_assistant.web.upload_media_file"
+            ) as upload_file,
+            patch(
+                "street_art_photo_assistant.web.submit_marker_creation",
+                return_value={
+                    "id": "edit-1",
+                    "status": "submitted",
+                    "reviewUrl": review_url,
+                },
+            ) as submit_creation,
+        ):
+            response = self.client.post(
+                "/api/sac/proposals/submit",
+                json={
+                    "proposal_token": proposal_token,
+                    "photos": [photo_path],
+                    "city": "test-city",
+                    "latitude": 48.0,
+                    "longitude": 2.0,
+                    "title": "",
+                    "description": "Reviewed description.",
+                    "tags": ["mural"],
+                    "artists": [{"id": "test-artist", "title": ""}],
+                    "attributes": {
+                        "artist_nationality": ["France"],
+                        "artwork_type": "Mural",
+                    },
+                    "attribution": "Synthetic Hunter",
+                    "edit_comment": "Synthetic proposal",
+                },
+            )
+
+        self.assertEqual(200, response.status_code, response.get_data(as_text=True))
+        result = response.get_json()
+        self.assertEqual("edit-1", result["edit"]["id"])
+        upload_file.assert_called_once()
+        actions = submit_creation.call_args.args[1]
+        self.assertEqual("test-city", actions["city"])
+        self.assertEqual(
+            [{"id": "test-artist"}], actions["artists"]
+        )
+        self.assertEqual(["mural"], actions["tags"])
+        self.assertEqual(
+            ["France"], actions["attributes.artist_nationality"]
+        )
+        self.assertEqual(1, len(actions["images"]))
+        receipt = json.loads(Path(result["receipt"]).read_text(encoding="utf-8"))
+        self.assertEqual("submitted", receipt["state"])
+        self.assertEqual("edit-1", receipt["edit"]["id"])
+        self.assertNotIn("test-access-token", json.dumps(receipt))
 
     def test_proposals_exclude_tags_the_photos_already_carry(self):
         preview = self.preview()

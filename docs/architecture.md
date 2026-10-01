@@ -30,7 +30,8 @@ local folders
   pipeline used by both the CLI and web layer.
 - `sac.py` is the only Street Art Cities network boundary. It refreshes one
   normalized city cache, gathers bounded nearby candidates, safely caches
-  public reference images, and returns evidence without editing photos.
+  public reference images, uploads explicitly approved photos, and submits
+  new-marker edits without editing local photos.
 - `runs.py` launches package subcommands without a shell and persists
   cancellable run manifests, logs, reports, summaries, and safe deletion.
 - `diagnostics.py` builds bounded, redacted, locally inspectable support

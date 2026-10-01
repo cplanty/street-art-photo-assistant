@@ -26,6 +26,9 @@ from street_art_photo_assistant.sac import (
     refresh_city,
     refresh_city_api,
     refresh_city_artists,
+    request_media_upload,
+    submit_marker_creation,
+    upload_media_file,
 )
 
 
@@ -113,6 +116,66 @@ class SACTests(unittest.TestCase):
             "Bearer test-access-token",
             session.get.call_args.kwargs["headers"]["Authorization"],
         )
+
+    def test_uploads_media_and_submits_marker_creation(self):
+        session = Mock()
+        session.get.return_value = FakeResponse({
+            "key": "media/test/orig.jpg",
+            "url": "https://uploads.example.test/signed",
+            "publicUrl": (
+                "https://streetartcities.com/media/test/orig.jpg"
+            ),
+        })
+        upload = request_media_upload(
+            "test-access-token",
+            filename="art.jpg",
+            content_type="image/jpeg",
+            session=session,
+        )
+        self.assertEqual(
+            "https://streetartcities.com/media/test/orig.jpg",
+            upload["publicUrl"],
+        )
+
+        session.put.return_value = FakeResponse()
+        with tempfile.TemporaryDirectory() as temporary:
+            image = Path(temporary) / "art.jpg"
+            image.write_bytes(b"synthetic-jpeg")
+            upload_media_file(
+                image,
+                upload["url"],
+                content_type="image/jpeg",
+                session=session,
+            )
+        self.assertEqual(
+            "image/jpeg",
+            session.put.call_args.kwargs["headers"]["Content-Type"],
+        )
+
+        session.post.return_value = FakeResponse({"edit": {
+            "id": "edit-1",
+            "status": "submitted",
+            "reviewUrl": (
+                "https://streetartcities.com/community/review-queue/edit-1"
+            ),
+        }})
+        edit = submit_marker_creation(
+            "test-access-token",
+            {
+                "lat": 48.0,
+                "lng": 2.0,
+                "city": "test-city",
+                "type": "artwork",
+                "images": [{"url": upload["publicUrl"]}],
+            },
+            edit_comment="Synthetic test",
+            session=session,
+        )
+        self.assertEqual("edit-1", edit["id"])
+        body = session.post.call_args.kwargs["json"]
+        self.assertNotIn("entityId", body)
+        self.assertEqual("marker", body["entityType"])
+        self.assertEqual("test-city", body["actions"]["city"])
 
     def test_refresh_normalizes_and_caches_all_artwork_statuses(self):
         removed = {**self.marker_item(), "id": "marker-2", "status": "removed"}

@@ -30,7 +30,10 @@ affiliated with or endorsed by Street Art Cities.
 - Optionally refresh a complete Street Art Cities city marker set and compare
   nearby candidates by artist, GPS, and local OpenCV evidence.
 - Test the Street Art Cities OAuth API locally with authorization-code PKCE and
-  in-memory `collections:read` and `markers:read` scopes.
+  in-memory read/edit scopes.
+- Review every image, coordinate, artist, description, tag, and advanced
+  attribute in a separate local form before submitting a new-artwork proposal
+  to the official Street Art Cities Edits API.
 - Select either the established public city snapshot or the authenticated,
   paginated Markers API while the newer API path is evaluated.
 - Optionally cache all available SAC marker pictures for evidence and map
@@ -73,7 +76,8 @@ python -m street_art_photo_assistant cluster --visual --output _runs\manual
 ## Privacy and safety
 
 The core workflow is local and has no telemetry. Provider access is used only
-when Street Art Cities matching is enabled. An offline report's GPS map can
+when Street Art Cities matching or an explicitly confirmed proposal is enabled.
+An offline report's GPS map can
 optionally request third-party display tiles when the user selects a network
 base map; tiles are never matching evidence. Tag edits apply immediately
 through exact atomic plans; GPS writes require preview and confirmation. Both

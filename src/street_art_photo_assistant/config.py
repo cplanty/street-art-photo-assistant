@@ -53,6 +53,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "paths": {
         "artists": "data/artists.csv",
+        "artist_descriptions": "data/artist_descriptions.json",
         "city_cache": "data/cities",
         "reference_images": "data/ref_images",
         "runs": "_runs",

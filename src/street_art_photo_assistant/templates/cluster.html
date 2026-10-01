@@ -18,6 +18,10 @@
   <header>
     <h1>{{ cluster.tag }}</h1>
     <p class="muted"><code>{{ cluster.id }}</code> · {{ cluster.photos|length }} primary · {{ cluster.context_photos|length }} context</p>
+    {% set proposal_photo = (cluster.photos or cluster.context_photos)|first %}
+    {% if proposal_photo %}
+      <a class="button success" href="{{ url_for('sac_proposal_review', run_id=run_id, cluster_id=cluster.id, photo=proposal_photo.path) }}" target="_blank" rel="noopener">Push to SAC ↗</a>
+    {% endif %}
   </header>
 
   <datalist id="known-tags">
@@ -117,6 +121,7 @@
                 <button type="button" onclick='openLocalPath("explorer", {{ photo.path|tojson }})'>Show in Explorer</button>
                 <button type="button" onclick='openLocalPath("open", {{ photo.path|tojson }})'>Open file</button>
                 <a class="button" href="{{ url_for('photo', path=photo.path) }}" target="_blank" rel="noopener">Full size ↗</a>
+                <a class="button success" href="{{ url_for('sac_proposal_review', run_id=run_id, cluster_id=cluster.id, photo=photo.path) }}" target="_blank" rel="noopener">Push to SAC ↗</a>
               </div>
               <p class="muted path">{{ photo.path }}</p>
             </div>

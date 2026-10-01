@@ -31,6 +31,8 @@ OAUTH_TOKEN_URL = BASE_URL + "/api/oauth/token"
 COLLECTIONS_URL = BASE_URL + "/api/collections"
 MARKERS_SEARCH_URL = BASE_URL + "/api/markers/search"
 ARTISTS_URL = BASE_URL + "/api/artists"
+MEDIA_UPLOAD_URL = BASE_URL + "/api/media/upload"
+EDITS_URL = BASE_URL + "/api/edits"
 CITY_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 USER_AGENT = (
     f"StreetArtPhotoAssistant/{__version__} "
@@ -136,6 +138,142 @@ def fetch_collections(
         raise RuntimeError(
             f"Street Art Cities collections request failed: {exc}"
         ) from exc
+
+
+def request_media_upload(
+    access_token: str,
+    *,
+    filename: str,
+    content_type: str,
+    timeout_seconds: int = 30,
+    session: requests.Session | None = None,
+) -> dict[str, str]:
+    """Request one short-lived upload URL for an approved image."""
+
+    if not access_token:
+        raise ValueError("A Street Art Cities access token is required")
+    if Path(filename).name != filename or not filename:
+        raise ValueError("Image filename must be a plain filename")
+    if content_type not in {"image/jpeg", "image/png"}:
+        raise ValueError("Street Art Cities accepts JPEG or PNG images")
+    client = session or requests.Session()
+    try:
+        response = client.get(
+            MEDIA_UPLOAD_URL,
+            params={"filename": filename, "contentType": content_type},
+            headers={
+                "Authorization": f"******",
+                "User-Agent": USER_AGENT,
+            },
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"Street Art Cities upload-link request failed: {exc}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Street Art Cities returned an invalid upload link")
+    result = {
+        key: str(payload.get(key) or "")
+        for key in ("key", "url", "publicUrl")
+    }
+    if (
+        not all(result.values())
+        or not result["url"].startswith("https://")
+        or not result["publicUrl"].startswith(
+            "https://streetartcities.com/media/"
+        )
+    ):
+        raise ValueError("Street Art Cities returned an invalid upload link")
+    return result
+
+
+def upload_media_file(
+    path: Path,
+    upload_url: str,
+    *,
+    content_type: str,
+    maximum_bytes: int = 25_000_000,
+    timeout_seconds: int = 120,
+    session: requests.Session | None = None,
+) -> None:
+    """Upload one unchanged local image to a SAC presigned URL."""
+
+    if not path.is_file():
+        raise ValueError(f"Image does not exist: {path}")
+    if path.stat().st_size > maximum_bytes:
+        raise ValueError("Street Art Cities images must be at most 25 MB")
+    parsed = urlparse(upload_url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError("Street Art Cities returned an invalid upload URL")
+    if content_type not in {"image/jpeg", "image/png"}:
+        raise ValueError("Street Art Cities accepts JPEG or PNG images")
+    client = session or requests.Session()
+    try:
+        with path.open("rb") as stream:
+            response = client.put(
+                upload_url,
+                data=stream,
+                headers={"Content-Type": content_type},
+                timeout=timeout_seconds,
+            )
+            response.raise_for_status()
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"Street Art Cities image upload failed: {exc}"
+        ) from exc
+
+
+def submit_marker_creation(
+    access_token: str,
+    actions: dict[str, Any],
+    *,
+    edit_comment: str = "",
+    timeout_seconds: int = 30,
+    session: requests.Session | None = None,
+) -> dict[str, Any]:
+    """Submit one new-marker suggestion to the official Edits API."""
+
+    if not access_token:
+        raise ValueError("A Street Art Cities access token is required")
+    if not actions:
+        raise ValueError("Marker creation actions are required")
+    body: dict[str, Any] = {
+        "entityType": "marker",
+        "actions": actions,
+    }
+    if edit_comment.strip():
+        body["editComment"] = edit_comment.strip()
+    client = session or requests.Session()
+    try:
+        response = client.post(
+            EDITS_URL,
+            json=body,
+            headers={
+                "Authorization": f"******",
+                "Content-Type": "application/json",
+                "User-Agent": USER_AGENT,
+            },
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"Street Art Cities marker proposal failed: {exc}"
+        ) from exc
+    edit = payload.get("edit") if isinstance(payload, dict) else None
+    if (
+        not isinstance(edit, dict)
+        or not str(edit.get("id") or "")
+        or not str(edit.get("reviewUrl") or "").startswith(
+            "https://streetartcities.com/community/review-queue/"
+        )
+    ):
+        raise ValueError("Street Art Cities returned an invalid edit receipt")
+    return edit
 
 
 def _incremental_cursor(path: Path) -> tuple[str, list[dict[str, Any]]] | None:

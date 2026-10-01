@@ -31,7 +31,7 @@ from flask import (
     url_for,
 )
 
-from .config import resolve_local_path, save_config, validate_config
+from .config import CITY_SLUG_RE, resolve_local_path, save_config, validate_config
 from .diagnostics import create_diagnostic_bundle
 from .gps import (
     apply_gps_plan,
@@ -40,7 +40,7 @@ from .gps import (
     build_missing_gps_plan,
 )
 from .metadata import apply_tag_edit_plan, build_tag_edit_plan
-from .models import PhotoRecord
+from .models import FileFingerprint, PhotoRecord
 from .photos import read_photo
 from .runs import RunManager
 from .sac import (
@@ -51,12 +51,19 @@ from .sac import (
     fetch_collections,
     oauth_authorization_url,
     refresh_city_artists,
+    request_media_upload,
+    submit_marker_creation,
+    upload_media_file,
 )
 from .workflow import scan_and_select, sources_from_config
 
 SAC_OAUTH_REDIRECT_URI = "http://127.0.0.1:8787/login"
-SAC_OAUTH_SCOPE = "collections:read markers:read artists:read"
+SAC_OAUTH_SCOPE = (
+    "collections:read markers:read artists:read edits:read edits:write"
+)
 SAC_OAUTH_PENDING_SECONDS = 600
+SAC_PROPOSAL_PENDING_SECONDS = 3600
+SAC_REQUIRED_PROPOSAL_SCOPES = {"edits:read", "edits:write"}
 
 
 def _signature(config: dict[str, Any]) -> str:
@@ -160,6 +167,63 @@ def _artist_tags(
                             f"https://www.instagram.com/{quote(handle, safe='')}/"
                         )
     return sorted(set(tags), key=str.casefold), by_slug, details_by_slug
+
+
+def _artist_defaults(path: Path, tag: str) -> dict[str, Any]:
+    if not path.is_file() or not tag:
+        return {}
+    try:
+        payload = _load_json(path)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            f"Could not read artist descriptions: {path}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Artist descriptions must be a JSON object")
+    folded = tag.casefold()
+    for name, value in payload.items():
+        if str(name).casefold() != folded:
+            continue
+        if isinstance(value, str):
+            return {"description": value}
+        if isinstance(value, dict):
+            return value
+        raise ValueError(f"Artist description for {tag} is invalid")
+    return {}
+
+
+def _photo_content_type(path: Path) -> str:
+    suffix = path.suffix.casefold()
+    if suffix in {".jpg", ".jpeg"}:
+        return "image/jpeg"
+    if suffix == ".png":
+        return "image/png"
+    raise ValueError("Street Art Cities accepts JPEG or PNG images")
+
+
+def _uploaded_image(
+    public_url: str,
+    *,
+    attribution: str,
+) -> dict[str, Any]:
+    if public_url.endswith("/orig.jpg"):
+        stem = public_url[:-len("orig.jpg")]
+        extension = "jpg"
+    elif public_url.endswith("/orig.png"):
+        stem = public_url[:-len("orig.png")]
+        extension = "png"
+    else:
+        raise ValueError("Street Art Cities returned an unknown image URL")
+    return {
+        "id": str(uuid.uuid4()),
+        "url": public_url,
+        "sizes": {
+            "small": f"{stem}512.{extension}",
+            "medium": f"{stem}1024.{extension}",
+            "large": f"{stem}2048.{extension}",
+        },
+        "attribution": attribution.strip(),
+    }
 
 
 def _append_artist(
@@ -354,6 +418,7 @@ def create_app(
         "previews": {},
         "sac_oauth_pending": {},
         "sac_oauth_token": None,
+        "sac_proposals": {},
     }
     runs_path = resolve_local_path(
         config_root, str(config["paths"]["runs"])
@@ -1065,6 +1130,358 @@ def create_app(
             direction=direction,
             read_only=bool(current_config().get("read_only")),
         )
+
+    @app.get("/runs/<run_id>/clusters/<cluster_id>/sac-proposal")
+    def sac_proposal_review(run_id: str, cluster_id: str):
+        if not _is_local_request():
+            abort(403)
+        now = time.time()
+        pending = state["sac_proposals"]
+        for identifier, item in list(pending.items()):
+            if now - float(item["created_at"]) > SAC_PROPOSAL_PENDING_SECONDS:
+                pending.pop(identifier, None)
+        cluster = refreshed_cluster(run_id, cluster_id)
+        photos = [*cluster["photos"], *cluster["context_photos"]]
+        if not photos:
+            raise ValueError("This cluster has no photos")
+        allowed = {str(Path(photo["path"]).resolve()): photo for photo in photos}
+        requested = str(request.args.get("photo") or "")
+        selected_path = str(Path(requested).resolve()) if requested else str(
+            Path((cluster["photos"] or photos)[0]["path"]).resolve()
+        )
+        if selected_path not in allowed:
+            raise ValueError("Selected photo is outside this cluster")
+        selected = allowed[selected_path]
+
+        artists_path = resolve_local_path(
+            config_root, str(current_config()["paths"]["artists"])
+        )
+        _tags, tags_by_slug, artist_details = _artist_tags(artists_path)
+        cluster_tag = str(cluster.get("tag") or "").strip()
+        generic_tags = {
+            str(tag).casefold()
+            for tag in current_config()["clustering"]["generic_tags"]
+        }
+        live_tags = [
+            str(tag).strip()
+            for tag in selected.get("tags") or []
+            if str(tag).strip()
+            and not str(tag).startswith("_")
+            and str(tag).casefold() not in generic_tags
+        ]
+        candidate_tags = [
+            tag for tag in [cluster_tag, *live_tags]
+            if tag and not tag.startswith("_")
+        ]
+        mapped_candidates = [
+            (tag, slug)
+            for tag in candidate_tags
+            for slug, mapped_tags in tags_by_slug.items()
+            if any(
+                mapped.casefold() == tag.casefold()
+                for mapped in mapped_tags
+            )
+        ]
+        cluster_mapping = next(
+            (
+                item for item in mapped_candidates
+                if item[0].casefold() == cluster_tag.casefold()
+            ),
+            None,
+        )
+        unique_mappings = list(dict.fromkeys(mapped_candidates))
+        artist_tag, artist_slug = (
+            cluster_mapping
+            or (unique_mappings[0] if len(unique_mappings) == 1 else ("", ""))
+        )
+        if not artist_tag and len(live_tags) == 1:
+            artist_tag = live_tags[0]
+        artist_name = str(
+            (artist_details.get(artist_slug) or {}).get("name")
+            or artist_tag
+        )
+        defaults_path = resolve_local_path(
+            config_root,
+            str(current_config()["paths"]["artist_descriptions"]),
+        )
+        defaults = _artist_defaults(defaults_path, artist_tag)
+        description = str(
+            defaults.get("description") or defaults.get("bio") or ""
+        ).strip()
+        attributes = deepcopy(defaults.get("default_attributes") or {})
+        if not isinstance(attributes, dict):
+            raise ValueError("Artist default_attributes must be an object")
+        instagram = str(
+            (artist_details.get(artist_slug) or {}).get("instagram_url") or ""
+        )
+        if instagram:
+            attributes.setdefault("press,_media,_blog_link", instagram)
+
+        latitude = selected.get("latitude")
+        longitude = selected.get("longitude")
+        if latitude is None or longitude is None:
+            latitude = cluster.get("latitude")
+            longitude = cluster.get("longitude")
+        nonce = secrets.token_urlsafe(24)
+        pending[nonce] = {
+            "created_at": now,
+            "run_id": run_id,
+            "cluster_id": cluster_id,
+            "photos": {
+                path: asdict(FileFingerprint.from_path(Path(path)))
+                for path in allowed
+            },
+        }
+        while len(pending) > 50:
+            pending.pop(next(iter(pending)))
+
+        token = state["sac_oauth_token"]
+        scopes = (
+            set(str(token.get("scope") or "").split())
+            if token and float(token["expires_at"]) > now else set()
+        )
+        connected = bool(token and SAC_REQUIRED_PROPOSAL_SCOPES <= scopes)
+        report = manager.report(run_id)
+        return render_template(
+            "sac_proposal.html",
+            proposal_token=nonce,
+            run_id=run_id,
+            cluster=cluster,
+            photos=photos,
+            selected_path=selected_path,
+            city=str(report.get("city") or ""),
+            latitude=latitude,
+            longitude=longitude,
+            artist_slug=artist_slug,
+            artist_name=artist_name,
+            description=description,
+            attributes=[
+                (key, json.dumps(value, ensure_ascii=False))
+                for key, value in attributes.items()
+            ],
+            connected=connected,
+            granted_scopes=sorted(scopes),
+            read_only=bool(current_config().get("read_only")),
+        )
+
+    @app.post("/api/sac/proposals/submit")
+    def submit_sac_proposal():
+        if not _is_local_request():
+            abort(403)
+        if current_config().get("read_only"):
+            abort(403)
+        payload = request.get_json(force=True)
+        nonce = str(payload.get("proposal_token") or "")
+        proposal = state["sac_proposals"].get(nonce)
+        if proposal is None:
+            raise ValueError("Unknown or expired Street Art Cities proposal")
+        if (
+            time.time() - float(proposal["created_at"])
+            > SAC_PROPOSAL_PENDING_SECONDS
+        ):
+            state["sac_proposals"].pop(nonce, None)
+            raise ValueError("Street Art Cities proposal expired; reopen it")
+
+        token = state["sac_oauth_token"]
+        if token is None or float(token["expires_at"]) <= time.time():
+            raise ValueError("Connect Street Art Cities before confirming")
+        scopes = set(str(token.get("scope") or "").split())
+        missing_scopes = sorted(SAC_REQUIRED_PROPOSAL_SCOPES - scopes)
+        if missing_scopes:
+            raise ValueError(
+                "Reconnect Street Art Cities to grant: "
+                + ", ".join(missing_scopes)
+            )
+
+        requested_photos = payload.get("photos")
+        if not isinstance(requested_photos, list) or not requested_photos:
+            raise ValueError("Select at least one image")
+        if len(requested_photos) > 10:
+            raise ValueError("Select at most 10 images")
+        selected_paths: list[Path] = []
+        seen_paths: set[str] = set()
+        for value in requested_photos:
+            path = Path(str(value)).resolve()
+            key = str(path)
+            expected = proposal["photos"].get(key)
+            if expected is None or key in seen_paths:
+                raise ValueError("Selected image is outside this proposal")
+            if asdict(FileFingerprint.from_path(path)) != expected:
+                raise ValueError(f"Selected image changed after preview: {path}")
+            if not _inside(path, source_roots()):
+                raise ValueError("Selected image is outside configured sources")
+            selected_paths.append(path)
+            seen_paths.add(key)
+
+        city = str(payload.get("city") or "").strip()
+        if not CITY_SLUG_RE.fullmatch(city):
+            raise ValueError("Street Art Cities city must be a lowercase slug")
+        try:
+            latitude = float(payload["latitude"])
+            longitude = float(payload["longitude"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("Valid latitude and longitude are required") from exc
+        if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+            raise ValueError("Latitude or longitude is outside its valid range")
+
+        artists = payload.get("artists")
+        if not isinstance(artists, list):
+            raise ValueError("Artists must be a list")
+        artist_actions: list[dict[str, str]] = []
+        for artist in artists:
+            if not isinstance(artist, dict):
+                raise ValueError("Each artist must be an object")
+            artist_id = str(artist.get("id") or "").strip()
+            title = str(artist.get("title") or "").strip()
+            if artist_id and title:
+                raise ValueError("Use either an artist ID or a new artist name")
+            if artist_id:
+                if not ARTIST_SLUG_RE.fullmatch(artist_id):
+                    raise ValueError(f"Invalid artist ID: {artist_id}")
+                artist_actions.append({"id": artist_id})
+            elif title:
+                if len(title) > 200:
+                    raise ValueError("Artist names must be at most 200 characters")
+                artist_actions.append({"title": title})
+
+        tags = payload.get("tags")
+        if not isinstance(tags, list) or any(
+            not isinstance(tag, str) for tag in tags
+        ):
+            raise ValueError("Tags must be a list of text values")
+        clean_tags = list(dict.fromkeys(
+            tag.strip() for tag in tags if tag.strip()
+        ))
+        attributes = payload.get("attributes")
+        if not isinstance(attributes, dict):
+            raise ValueError("Advanced attributes must be an object")
+        action_attributes: dict[str, Any] = {}
+        for key, value in attributes.items():
+            clean_key = str(key).strip()
+            if (
+                not clean_key
+                or "." in clean_key
+                or len(clean_key) > 100
+                or value in (None, "", [])
+            ):
+                if value in (None, "", []):
+                    continue
+                raise ValueError(f"Invalid advanced attribute: {clean_key}")
+            action_attributes[f"attributes.{clean_key}"] = value
+
+        title = str(payload.get("title") or "").strip()
+        description = str(payload.get("description") or "").strip()
+        attribution = str(payload.get("attribution") or "").strip()
+        edit_comment = str(payload.get("edit_comment") or "").strip()
+        if len(title) > 500 or len(description) > 20_000:
+            raise ValueError("Title or description is too long")
+        actions: dict[str, Any] = {
+            "lat": latitude,
+            "lng": longitude,
+            "city": city,
+            "type": "artwork",
+            "artists": artist_actions,
+            **action_attributes,
+        }
+        if title:
+            actions["title"] = title
+        if description:
+            actions["description"] = description
+        if clean_tags:
+            actions["tags"] = clean_tags
+
+        approved = {
+            "photos": [str(path) for path in selected_paths],
+            "fingerprints": {
+                str(path): proposal["photos"][str(path)]
+                for path in selected_paths
+            },
+            "actions": actions,
+            "attribution": attribution,
+            "edit_comment": edit_comment,
+        }
+        signature = hashlib.sha256(json.dumps(
+            approved,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")).hexdigest()
+        receipt_id = f"sac-create-{nonce}"
+        receipt_file = plan_path(receipt_id)
+        if receipt_file.is_file():
+            receipt = _load_json(receipt_file)
+            if receipt.get("signature") != signature:
+                if receipt.get("images"):
+                    raise ValueError(
+                        "The form changed after an image upload; reopen the "
+                        "proposal before retrying"
+                    )
+                receipt = {}
+        else:
+            receipt = {}
+        if not receipt:
+            receipt = {
+                "version": 1,
+                "id": receipt_id,
+                "kind": "sac-marker-creation",
+                "created_at": datetime.now().astimezone().isoformat(),
+                "state": "uploading",
+                "signature": signature,
+                "approved": approved,
+                "images": [],
+            }
+            save_plan(receipt)
+
+        uploaded_by_path = {
+            item["path"]: item for item in receipt.get("images") or []
+        }
+        marker_images: list[dict[str, Any]] = []
+        access_token = str(token["access_token"])
+        for path in selected_paths:
+            existing = uploaded_by_path.get(str(path))
+            if existing:
+                marker_images.append(existing["image"])
+                continue
+            content_type = _photo_content_type(path)
+            upload = request_media_upload(
+                access_token,
+                filename=path.name,
+                content_type=content_type,
+            )
+            upload_media_file(
+                path,
+                upload["url"],
+                content_type=content_type,
+            )
+            image = _uploaded_image(
+                upload["publicUrl"],
+                attribution=attribution,
+            )
+            receipt["images"].append({
+                "path": str(path),
+                "public_url": upload["publicUrl"],
+                "image": image,
+                "uploaded_at": datetime.now().astimezone().isoformat(),
+            })
+            save_plan(receipt)
+            marker_images.append(image)
+
+        actions["images"] = marker_images
+        edit = submit_marker_creation(
+            access_token,
+            actions,
+            edit_comment=edit_comment,
+        )
+        receipt["state"] = "submitted"
+        receipt["edit"] = edit
+        receipt["completed_at"] = datetime.now().astimezone().isoformat()
+        save_plan(receipt)
+        state["sac_proposals"].pop(nonce, None)
+        return jsonify({
+            "ok": True,
+            "edit": edit,
+            "receipt": str(receipt_file),
+        })
 
     @app.post("/api/runs/<run_id>/clusters/<cluster_id>/tags/preview")
     def tag_preview(run_id: str, cluster_id: str):

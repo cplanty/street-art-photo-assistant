@@ -95,6 +95,15 @@ file, before value, and after value. `status: applying` means earlier listed
 writes completed before a later interruption; `status: complete` means the
 entire plan finished.
 
+## Street Art Cities creation receipt
+
+`_runs/_plans/sac-create-<nonce>.json` records the exact approved form values,
+selected source paths and fingerprints, completed SAC media uploads, and the
+returned edit ID, status, and review URL. `state: uploading` is resumable only
+for the identical approved payload; `state: submitted` means the proposal was
+created but does not mean it was accepted. OAuth access tokens and presigned
+upload URLs are never persisted.
+
 Each run also owns `progress.json`: stage, percentage, detail message, optional
 current/total item counts, accumulated warnings, and update time. The web page
 polls this file rather than inferring progress from console text.

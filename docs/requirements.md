@@ -17,10 +17,14 @@
 11. Refresh and compare a selected city only when matching is enabled.
 12. Persist configuration, run manifests, progress, reports, and change logs.
 13. Expose the replaceable semicolon-separated artist mapping.
+14. Open new-artwork proposals in a separate editable local review form.
+15. Upload images and submit to the SAC Edits API only after form confirmation,
+    retaining a durable receipt and manual-review URL.
 
 ## Safety and privacy
 
-- No telemetry, accounts, hosted worker, or cloud dependency.
+- No telemetry, application account, or hosted worker; provider access is
+  optional and explicit.
 - No personal paths, credentials, photos, or private reference collections.
 - Existing GPS is never replaced by the missing-GPS workflow.
 - File writes remain inside configured source or run roots.
@@ -29,7 +33,8 @@
 
 ## Out of scope
 
-- Publishing or modifying content on Street Art Cities.
+- Direct publishing, automatic review approval, or bypassing Street Art Cities
+  community review.
 - Camera import, clock correction, or personal daily automation.
 - Private photo archives, catalogues, map collections, and embedding indexes.
 - Account management, email, hosted queues, and deployment infrastructure.

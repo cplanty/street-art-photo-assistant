@@ -30,6 +30,7 @@ button:disabled, .primary:disabled {
   cursor: not-allowed;
 }
 .primary { color: white; background: #0969da; border-color: #0969da; }
+.success { color: white; background: #1a7f37; border-color: #1a7f37; }
 .danger { color: #cf222e; border-color: #cf222e; }
 .muted { color: #656d76; font-size: 0.9rem; }
 .page-header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
@@ -98,6 +99,49 @@ figcaption { margin-top: 8px; overflow-wrap: anywhere; font-size: 0.8rem; }
 .gps-plot circle { fill: #0969da; stroke: white; stroke-width: 2; }
 .gps-plot text { font-size: 12px; fill: #1f2328; }
 code { overflow-wrap: anywhere; }
+.proposal-main { max-width: 1200px; margin-right: auto; margin-left: auto; }
+.proposal-main .card { margin-bottom: 16px; }
+.proposal-warning { border-color: #bf8700; background: #fff8c5; }
+.proposal-columns label { margin-bottom: 12px; }
+.proposal-columns input { width: 100%; }
+.proposal-images {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.proposal-image {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px;
+  align-items: start;
+  padding: 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+}
+.proposal-image input { margin: 4px 0 0; }
+.proposal-image img {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 180px;
+  object-fit: contain;
+  background: #f0f2f4;
+}
+.proposal-pair {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(240px, 2fr) auto;
+  gap: 8px;
+  align-items: end;
+  margin: 8px 0;
+}
+.proposal-pair input { width: 100%; }
+.proposal-result {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #2da44e;
+  border-radius: 8px;
+  background: #dafbe1;
+}
 
 .review-main { margin-top: 16px; }
 .review-nav {
