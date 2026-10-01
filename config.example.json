@@ -50,6 +50,7 @@
   },
   "paths": {
     "artists": "data/artists.csv",
+    "local_artists": "data/artists.local.csv",
     "city_cache": "data/cities",
     "reference_images": "data/ref_images",
     "runs": "_runs"

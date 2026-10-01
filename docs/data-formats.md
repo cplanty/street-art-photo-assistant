@@ -2,7 +2,8 @@
 
 ## Artist mapping
 
-`data/artists.csv` is UTF-8 and semicolon-separated:
+`data/artists.csv` and the optional gitignored `data/artists.local.csv` use the
+same UTF-8, semicolon-separated format:
 
 ```text
 tag;streetartcities_slug;streetartcities_name;instagram;status
@@ -10,6 +11,13 @@ tag;streetartcities_slug;streetartcities_name;instagram;status
 
 The local tag controls photo metadata. Provider slug, provider name, and
 Instagram values are optional for user-added rows.
+
+The application reads the committed main file first, then adds tags found only
+in the local file. A duplicate local tag never overrides the public mapping.
+The browser destination selector defaults additions to the committed main
+file. Users can instead select the local file to extend the catalogue without
+modifying or committing shared data. A missing selected file is created with
+the standard header; the default local path is listed in `.gitignore`.
 
 `streetartcities_slug` and `streetartcities_name` are deliberately separate and
 are never interchangeable:
@@ -30,10 +38,11 @@ Rows written before this column existed remain valid: the missing value is read
 as empty, and the header is rewritten with the column the next time a row is
 appended.
 
-The artist catalogue refresh fills `streetartcities_name` only where a slug is
-present and the name is blank. It never overwrites a curated name, never
-invents a slug for a tag that has none, and reports unresolved slugs and
-possible tag/slug matches for review instead of applying them.
+The artist catalogue refresh processes both files and fills
+`streetartcities_name` only where a slug is present and the name is blank. It
+never overwrites a curated name, never invents a slug for a tag that has none,
+and reports unresolved slugs and possible tag/slug matches for review instead
+of applying them.
 
 ## Normalized photo
 

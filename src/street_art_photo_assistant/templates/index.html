@@ -141,7 +141,11 @@
         <p class="muted">Used for review copies; defaults to <code>_tmp_photos</code>.</p>
         <div class="file-row">
           <code>{{ artists_path }}</code>
-          <button type="button" onclick="openLocal('artists')">Open artists.csv</button>
+          <button type="button" onclick="openLocal('artists')">Open public artists.csv</button>
+        </div>
+        <div class="file-row">
+          <code>{{ local_artists_path }}</code>
+          <button type="button" onclick="openLocal('local-artists')">Open local artist additions</button>
         </div>
         <label class="check">
           <input id="auto_save" type="checkbox">

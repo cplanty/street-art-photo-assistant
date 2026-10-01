@@ -283,6 +283,13 @@ code { overflow-wrap: anywhere; }
   color: #cf222e;
   font-weight: bold;
 }
+.tag-artist-links {
+  display: inline-flex;
+  gap: 4px;
+  padding-left: 4px;
+  border-left: 1px solid #80ccff;
+}
+.tag-artist-links a { color: #0969da; }
 .photo-image-resizer {
   position: relative;
   grid-column: 1 / -1;

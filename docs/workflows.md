@@ -8,7 +8,8 @@
    and use their evidence to identify and tag known artwork.
 3. Review every cluster with **Ctrl+Left/Right** for previous/next and **Tab**
    to move between tag fields. Search by tag substring and use autocomplete
-   from `data/artists.csv` to apply recurring artist tags quickly.
+   from the combined public and local artist catalogues to apply recurring
+   artist tags quickly.
 4. Run a second pass on the now-tagged photos to check whether the same artist
    or artwork already exists on Street Art Cities. Correct obvious GPS drift by
    comparing positions with context photos or Street View, then copy the images
@@ -101,10 +102,15 @@ The × button removes an existing tag immediately. **Add**, **Add to all**, and
 **Add to selected** also write immediately; pressing Enter in a tag editor is
 equivalent to its default Add action. Internal exact plans still provide
 fingerprint validation, atomic writes, and change logs. The cluster reloads so
-new labels are immediately visible.
-When a newly added non-internal tag is absent from `data/artists.csv`, a helper
-asks the user to confirm its Street Art Cities slug and Instagram handle before
-atomically appending it. Tags beginning with `_` never trigger this helper.
+new labels are immediately visible. Artist tags mapped by the combined
+catalogue include direct Street Art Cities and Instagram links beside both
+common and photo-specific tags.
+When a newly added non-internal tag is absent from both artist catalogues, a
+helper asks the user to confirm its Street Art Cities slug and Instagram
+handle. Its destination selector defaults to the committed `artists.csv`, with
+the gitignored `artists.local.csv` available for user-only additions. A missing
+selected file is created automatically. Tags beginning with `_` never trigger
+this helper.
 
 To fix one image independently, click its blue/grey map point to select it,
 view its thumbnail, and drag it. The map shows the number of pending markers
@@ -123,7 +129,7 @@ links that update whenever the target moves.
 Street Art Cities candidate status is green for active markers and red for
 removed markers. Each candidate links to its marker, its SAC artist page when
 an artist slug exists, and the artist's Instagram profile when that handle is
-available in `data/artists.csv`.
+available in the combined artist catalogues.
 
 ## Propose a new Street Art Cities artwork
 
@@ -133,14 +139,17 @@ attribution, coordinates, city, title, description, artists, core tags,
 advanced attributes, and the reviewer comment are all editable.
 
 The form preselects only the photo used to open it. Artist identity and
-Instagram are joined through `data/artists.csv`; optional description and
-advanced defaults come from `paths.artist_descriptions`. Confirming the form
+Instagram are joined through the combined public and local artist catalogues;
+optional description and advanced defaults come from
+`paths.artist_descriptions`. Confirming the form
 revalidates every selected file fingerprint, requests SAC upload links, uploads
 the original bytes, and submits one marker-creation edit. Third-party edits
 remain submitted for manual review, and the result links to SAC's review queue.
 An interrupted submission retains its durable `_plans/sac-create-*.json`
 receipt so already uploaded images are not uploaded again on an unchanged
-retry. OAuth tokens are never written to the receipt.
+retry. If SAC rejects an expired authorization during submission, reconnect
+the API and confirm the unchanged form again; the rejected token is discarded
+and completed image uploads are reused. OAuth tokens are never written to the receipt.
 
 ## Runs
 

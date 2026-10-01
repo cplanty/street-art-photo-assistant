@@ -65,6 +65,9 @@ uploading. Each image uses the official two-step media flow:
 The local receipt is updated after every upload and after edit creation.
 Third-party OAuth edits always remain in the manual review queue; the app shows
 the returned `reviewUrl` and never accepts its own proposal.
+If SAC rejects authorization, the app includes SAC's safe error detail,
+discards that in-memory connection, and asks the user to reconnect. Retrying
+the unchanged proposal reuses image uploads already recorded in its receipt.
 
 ## Marker sources
 
@@ -119,13 +122,14 @@ oldest-first, 100 per page, and writes the normalized result atomically to
 
 That file is not a marker cache; the city selector ignores it.
 
-The refresh then fills `data/artists.csv`. It only writes
-`streetartcities_name` for rows that already have a slug and a blank name, so a
-curated display name is never overwritten. Slugs the provider no longer knows
-are returned as `unresolved_slugs` and left untouched. Tags with no slug at all
-are matched against provider titles and alternative titles and returned as
-`suggestions`; they are **not** written, because assigning an identity to a tag
-is a review decision, not an automatic one.
+The refresh then processes both `paths.artists` and
+`paths.local_artists`. It only writes `streetartcities_name` for rows that
+already have a slug and a blank name, so a curated display name is never
+overwritten. Slugs the provider no longer knows are returned as
+`unresolved_slugs` and left untouched. Tags with no slug at all are matched
+against provider titles and alternative titles and returned as `suggestions`;
+they are **not** written, because assigning an identity to a tag is a review
+decision, not an automatic one.
 
 ## Network behavior
 
@@ -221,7 +225,8 @@ reference counts reach the configurable
 Clusters without coordinates have no nearby candidates. For located clusters,
 the adapter:
 
-1. resolves the local tag through `data/artists.csv`;
+1. resolves the local tag through the public catalogue plus the gitignored
+   local overlay, with the public row taking precedence;
 2. gathers markers inside `matching.candidate_radius_m`;
 3. ranks matching artist slugs before other markers, then by distance;
 4. optionally compares the first primary photo with cached references using
@@ -268,9 +273,9 @@ several reasons:
   picture may fail validation or download. Cached pictures are keyed by marker
   ID, so a picture replaced upstream remains stale until its cache entry is
   removed.
-- **Artist mapping:** A missing or incorrect mapping between a local tag and
-  `data/artists.csv` can prevent the correct marker from receiving same-artist
-  priority.
+- **Artist mapping:** A missing or incorrect mapping in the combined public
+  and local catalogues can prevent the correct marker from receiving
+  same-artist priority.
 - **Local clustering:** Photos of one artwork can be split between clusters, or
   unrelated photos can be grouped together, resulting in an unsuitable
   representative image or centroid.

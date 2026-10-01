@@ -38,6 +38,30 @@ USER_AGENT = (
     f"StreetArtPhotoAssistant/{__version__} "
     "(local desktop application; public SAC adapter)"
 )
+
+
+class SACAuthorizationError(RuntimeError):
+    """The Street Art Cities API rejected the current OAuth token."""
+
+
+def _authorization_error(
+    response: requests.Response | None,
+    operation: str,
+) -> SACAuthorizationError:
+    detail = ""
+    if response is not None:
+        try:
+            payload = response.json()
+        except (requests.RequestException, ValueError):
+            payload = None
+        if isinstance(payload, dict):
+            detail = str(payload.get("error") or "").strip()
+    suffix = f": {detail}" if detail else ""
+    return SACAuthorizationError(
+        f"Street Art Cities rejected authorization for {operation}{suffix}"
+    )
+
+
 PROFILE_LIMITS = {"quick": 4, "balanced": 8, "thorough": 16}
 ProgressCallback = Callable[[str, int, int, str], None]
 
@@ -162,7 +186,7 @@ def request_media_upload(
             MEDIA_UPLOAD_URL,
             params={"filename": filename, "contentType": content_type},
             headers={
-                "Authorization": f"******",
+                "Authorization": "Bearer " + access_token,
                 "User-Agent": USER_AGENT,
             },
             timeout=timeout_seconds,
@@ -170,6 +194,11 @@ def request_media_upload(
         response.raise_for_status()
         payload = response.json()
     except requests.RequestException as exc:
+        if getattr(getattr(exc, "response", None), "status_code", None) == 401:
+            raise _authorization_error(
+                getattr(exc, "response", None),
+                "the media upload",
+            ) from exc
         raise RuntimeError(
             f"Street Art Cities upload-link request failed: {exc}"
         ) from exc
@@ -252,7 +281,7 @@ def submit_marker_creation(
             EDITS_URL,
             json=body,
             headers={
-                "Authorization": f"******",
+                "Authorization": "Bearer " + access_token,
                 "Content-Type": "application/json",
                 "User-Agent": USER_AGENT,
             },
@@ -261,6 +290,11 @@ def submit_marker_creation(
         response.raise_for_status()
         payload = response.json()
     except requests.RequestException as exc:
+        if getattr(getattr(exc, "response", None), "status_code", None) == 401:
+            raise _authorization_error(
+                getattr(exc, "response", None),
+                "the marker proposal",
+            ) from exc
         raise RuntimeError(
             f"Street Art Cities marker proposal failed: {exc}"
         ) from exc
@@ -660,16 +694,24 @@ def cached_cities(cache_directory: Path) -> list[str]:
     )
 
 
-def load_artist_mapping(path: Path) -> dict[str, str]:
-    """Load accent-preserving, case-insensitive local tag-to-slug mappings."""
+def load_artist_mapping(
+    path: Path,
+    overlays: Iterable[Path] = (),
+) -> dict[str, str]:
+    """Load a primary artist mapping followed by optional local overlays."""
 
-    mapping = {}
-    with path.open(encoding="utf-8-sig", newline="") as stream:
-        for row in csv.DictReader(stream, delimiter=";"):
-            tag = str(row.get("tag") or "").strip()
-            slug = str(row.get("streetartcities_slug") or "").strip()
-            if tag and slug:
-                mapping[tag.casefold()] = slug
+    mapping: dict[str, str] = {}
+    for index, source in enumerate((path, *overlays)):
+        if not source.is_file():
+            if index == 0:
+                raise ValueError(f"Artist mapping does not exist: {source}")
+            continue
+        with source.open(encoding="utf-8-sig", newline="") as stream:
+            for row in csv.DictReader(stream, delimiter=";"):
+                tag = str(row.get("tag") or "").strip()
+                slug = str(row.get("streetartcities_slug") or "").strip()
+                if tag and slug:
+                    mapping.setdefault(tag.casefold(), slug)
     return mapping
 
 
@@ -834,6 +876,7 @@ def compare_clusters(
     city_payload: dict[str, Any],
     *,
     artist_mapping_path: Path,
+    artist_mapping_overlays: Iterable[Path] = (),
     reference_cache: Path,
     candidate_radius_m: float,
     visual_enabled: bool,
@@ -846,7 +889,10 @@ def compare_clusters(
 
     if profile not in PROFILE_LIMITS:
         raise ValueError("Unknown visual matching profile")
-    mapping = load_artist_mapping(artist_mapping_path)
+    mapping = load_artist_mapping(
+        artist_mapping_path,
+        artist_mapping_overlays,
+    )
     markers = city_payload["markers"]
     cluster_list = list(clusters)
     prepared = []

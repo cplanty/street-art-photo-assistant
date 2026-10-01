@@ -44,6 +44,7 @@ from .models import FileFingerprint, PhotoRecord
 from .photos import read_photo
 from .runs import RunManager
 from .sac import (
+    SACAuthorizationError,
     RequestThrottle,
     cached_cities,
     create_pkce_pair,
@@ -134,38 +135,44 @@ ARTIST_FIELDS = [
 
 
 def _artist_tags(
-    path: Path,
+    paths: Path | list[Path] | tuple[Path, ...],
 ) -> tuple[list[str], dict[str, list[str]], dict[str, dict[str, str]]]:
     tags: list[str] = []
     by_slug: dict[str, list[str]] = {}
     details_by_slug: dict[str, dict[str, str]] = {}
-    if not path.is_file():
-        return tags, by_slug, details_by_slug
-    with path.open(encoding="utf-8-sig", newline="") as stream:
-        for row in csv.DictReader(stream, delimiter=";"):
-            tag = str(row.get("tag") or "").strip()
-            slug = str(row.get("streetartcities_slug") or "").strip()
-            name = str(row.get("streetartcities_name") or "").strip()
-            instagram = str(row.get("instagram") or "").strip()
-            if not tag:
-                continue
-            tags.append(tag)
-            if slug:
-                by_slug.setdefault(slug, []).append(tag)
-                details = details_by_slug.setdefault(
-                    slug, {"tag": tag, "name": "", "instagram_url": ""}
-                )
-                if name and not details["name"]:
-                    details["name"] = name
-                if instagram and not details["instagram_url"]:
-                    try:
-                        handle = _instagram_handle(instagram)
-                    except ValueError:
-                        handle = ""
-                    if handle:
-                        details["instagram_url"] = (
-                            f"https://www.instagram.com/{quote(handle, safe='')}/"
-                        )
+    sources = [paths] if isinstance(paths, Path) else list(paths)
+    seen_tags: set[str] = set()
+    for path in sources:
+        if not path.is_file():
+            continue
+        with path.open(encoding="utf-8-sig", newline="") as stream:
+            for row in csv.DictReader(stream, delimiter=";"):
+                tag = str(row.get("tag") or "").strip()
+                slug = str(row.get("streetartcities_slug") or "").strip()
+                name = str(row.get("streetartcities_name") or "").strip()
+                instagram = str(row.get("instagram") or "").strip()
+                folded = tag.casefold()
+                if not tag or folded in seen_tags:
+                    continue
+                seen_tags.add(folded)
+                tags.append(tag)
+                if slug:
+                    by_slug.setdefault(slug, []).append(tag)
+                    details = details_by_slug.setdefault(
+                        slug, {"tag": tag, "name": "", "instagram_url": ""}
+                    )
+                    if name and not details["name"]:
+                        details["name"] = name
+                    if instagram and not details["instagram_url"]:
+                        try:
+                            handle = _instagram_handle(instagram)
+                        except ValueError:
+                            handle = ""
+                        if handle:
+                            details["instagram_url"] = (
+                                "https://www.instagram.com/"
+                                f"{quote(handle, safe='')}/"
+                            )
     return sorted(set(tags), key=str.casefold), by_slug, details_by_slug
 
 
@@ -342,7 +349,8 @@ def _fill_artist_names(
 
 
 def _suggest_artist_slugs(
-    path: Path, artists: list[dict[str, Any]]
+    paths: Path | list[Path] | tuple[Path, ...],
+    artists: list[dict[str, Any]],
 ) -> list[dict[str, str]]:
     """Propose provider identities for unmapped tags without writing them."""
 
@@ -358,19 +366,28 @@ def _suggest_artist_slugs(
             if key and key not in by_name:
                 by_name[key] = artist
     suggestions = []
-    with path.open(encoding="utf-8-sig", newline="") as stream:
-        for row in csv.DictReader(stream, delimiter=";"):
-            tag = str(row.get("tag") or "").strip()
-            slug = str(row.get("streetartcities_slug") or "").strip()
-            if not tag or slug or tag.startswith("_"):
-                continue
-            match = by_name.get(tag.casefold())
-            if match:
-                suggestions.append({
-                    "tag": tag,
-                    "slug": str(match.get("slug") or ""),
-                    "name": str(match.get("name") or ""),
-                })
+    sources = [paths] if isinstance(paths, Path) else list(paths)
+    seen_tags: set[str] = set()
+    for path in sources:
+        if not path.is_file():
+            continue
+        with path.open(encoding="utf-8-sig", newline="") as stream:
+            for row in csv.DictReader(stream, delimiter=";"):
+                tag = str(row.get("tag") or "").strip()
+                slug = str(row.get("streetartcities_slug") or "").strip()
+                folded = tag.casefold()
+                if not tag or folded in seen_tags:
+                    continue
+                seen_tags.add(folded)
+                if slug or tag.startswith("_"):
+                    continue
+                match = by_name.get(folded)
+                if match:
+                    suggestions.append({
+                        "tag": tag,
+                        "slug": str(match.get("slug") or ""),
+                        "name": str(match.get("name") or ""),
+                    })
     return suggestions
 
 
@@ -469,6 +486,13 @@ def create_app(
             for source in sources_from_config(current_config(), config_root)
             if source.enabled
         ]
+
+    def artist_paths() -> tuple[Path, Path]:
+        paths = current_config()["paths"]
+        return (
+            resolve_local_path(config_root, str(paths["artists"])),
+            resolve_local_path(config_root, str(paths["local_artists"])),
+        )
 
     def require_preview(token: str, submitted: dict[str, Any]) -> None:
         preview = state["previews"].get(token)
@@ -635,9 +659,8 @@ def create_app(
             "index.html",
             config=current_config(),
             config_path=config_path,
-            artists_path=resolve_local_path(
-                config_root, str(current_config()["paths"]["artists"])
-            ),
+            artists_path=artist_paths()[0],
+            local_artists_path=artist_paths()[1],
             cached_cities=cached_cities(resolve_local_path(
                 config_root, str(current_config()["paths"]["city_cache"])
             )),
@@ -765,12 +788,26 @@ def create_app(
         if current_config().get("read_only"):
             return jsonify({"ok": False, "error": "Read-only mode"}), 403
         payload = request.get_json(force=True)
-        artists_path = resolve_local_path(
-            config_root, str(current_config()["paths"]["artists"])
+        main_artists_path, local_artists_path = artist_paths()
+        destination = str(payload.get("destination") or "main")
+        if destination not in {"main", "local"}:
+            raise ValueError("Artist mapping destination must be main or local")
+        destination_path = (
+            main_artists_path if destination == "main" else local_artists_path
         )
+        tag = str(payload.get("tag") or "").strip()
+        known_tags, _by_slug, _details = _artist_tags(
+            (main_artists_path, local_artists_path)
+        )
+        if any(known.casefold() == tag.casefold() for known in known_tags):
+            return jsonify({
+                "ok": True,
+                "added": False,
+                "path": str(destination_path),
+            })
         added = _append_artist(
-            artists_path,
-            tag=str(payload.get("tag") or ""),
+            destination_path,
+            tag=tag,
             slug=str(payload.get("slug") or ""),
             name=str(payload.get("name") or ""),
             instagram=str(payload.get("instagram") or ""),
@@ -778,7 +815,7 @@ def create_app(
         return jsonify({
             "ok": True,
             "added": added,
-            "path": str(artists_path),
+            "path": str(destination_path),
         })
 
     @app.post("/api/artists/catalog")
@@ -808,9 +845,7 @@ def create_app(
         cache_directory = resolve_local_path(
             config_root, str(config["paths"]["city_cache"])
         )
-        artists_path = resolve_local_path(
-            config_root, str(config["paths"]["artists"])
-        )
+        artists_paths = artist_paths()
         catalog = refresh_city_artists(
             city,
             cache_directory,
@@ -824,17 +859,28 @@ def create_app(
             for artist in catalog["artists"]
             if artist.get("slug") and artist.get("name")
         }
-        result = _fill_artist_names(artists_path, names_by_slug)
+        results = [
+            _fill_artist_names(path, names_by_slug)
+            for path in artists_paths
+            if path.is_file()
+        ]
         return jsonify({
             "ok": True,
             "city": city,
             "artists": len(catalog["artists"]),
-            "filled": result["filled"],
-            "unresolved_slugs": result["unresolved_slugs"],
+            "filled": [
+                item for result in results for item in result["filled"]
+            ],
+            "unresolved_slugs": sorted({
+                slug
+                for result in results
+                for slug in result["unresolved_slugs"]
+            }),
             "suggestions": _suggest_artist_slugs(
-                artists_path, catalog["artists"]
+                artists_paths, catalog["artists"]
             ),
-            "path": str(artists_path),
+            "path": str(artists_paths[0]),
+            "local_path": str(artists_paths[1]),
         })
 
     @app.post("/api/browse-folder")
@@ -860,9 +906,18 @@ def create_app(
             if not path.exists():
                 save_config(path, current_config())
         elif target == "artists":
-            path = resolve_local_path(
-                config_root, str(current_config()["paths"]["artists"])
-            )
+            path = artist_paths()[0]
+        elif target == "local-artists":
+            path = artist_paths()[1]
+            if not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                temporary = path.with_name(path.name + ".tmp")
+                temporary.write_text(
+                    ";".join(ARTIST_FIELDS) + "\n",
+                    encoding="utf-8",
+                    newline="\n",
+                )
+                os.replace(temporary, path)
         elif target == "diagnostics":
             path = manager.run_root / "_diagnostics"
             path.mkdir(parents=True, exist_ok=True)
@@ -1056,10 +1111,7 @@ def create_app(
         direction = str(request.args.get("dir") or "asc")
         if direction not in {"asc", "desc"}:
             direction = "asc"
-        artists_path = resolve_local_path(
-            config_root, str(current_config()["paths"]["artists"])
-        )
-        artist_tags, tags_by_slug, artist_details = _artist_tags(artists_path)
+        artist_tags, tags_by_slug, artist_details = _artist_tags(artist_paths())
         clustering = current_config()["clustering"]
         proposals = [
             str(clustering["unknown_tag"]),
@@ -1092,6 +1144,19 @@ def create_app(
             if tag not in autocomplete_tags:
                 autocomplete_tags.append(tag)
         photo_groups = [*cluster["photos"], *cluster["context_photos"]]
+        links_by_folded_tag = {
+            tag.casefold(): {
+                "sac": (
+                    "https://streetartcities.com/artists/"
+                    f"{quote(slug, safe='')}"
+                ),
+                "instagram": (
+                    artist_details.get(slug, {}).get("instagram_url") or None
+                ),
+            }
+            for slug, mapped_tags in tags_by_slug.items()
+            for tag in mapped_tags
+        }
         common_tags = []
         if photo_groups:
             common = set(photo_groups[0]["tags"])
@@ -1102,6 +1167,11 @@ def create_app(
             ]
         for photo in photo_groups:
             present = {str(tag).casefold() for tag in photo["tags"]}
+            photo["tag_links"] = {
+                tag: links_by_folded_tag[str(tag).casefold()]
+                for tag in photo["tags"]
+                if str(tag).casefold() in links_by_folded_tag
+            }
             photo["proposals"] = [
                 tag for tag in proposals if tag.casefold() not in present
             ]
@@ -1123,6 +1193,11 @@ def create_app(
             known_tags=autocomplete_tags,
             artist_tags=artist_tags,
             common_tags=common_tags,
+            common_tag_links={
+                tag: links_by_folded_tag[str(tag).casefold()]
+                for tag in common_tags
+                if str(tag).casefold() in links_by_folded_tag
+            },
             tag_proposals=cluster_proposals,
             previous_id=ids[(position - 1) % len(ids)],
             next_id=ids[(position + 1) % len(ids)],
@@ -1153,10 +1228,7 @@ def create_app(
             raise ValueError("Selected photo is outside this cluster")
         selected = allowed[selected_path]
 
-        artists_path = resolve_local_path(
-            config_root, str(current_config()["paths"]["artists"])
-        )
-        _tags, tags_by_slug, artist_details = _artist_tags(artists_path)
+        _tags, tags_by_slug, artist_details = _artist_tags(artist_paths())
         cluster_tag = str(cluster.get("tag") or "").strip()
         generic_tags = {
             str(tag).casefold()
@@ -1443,11 +1515,18 @@ def create_app(
                 marker_images.append(existing["image"])
                 continue
             content_type = _photo_content_type(path)
-            upload = request_media_upload(
-                access_token,
-                filename=path.name,
-                content_type=content_type,
-            )
+            try:
+                upload = request_media_upload(
+                    access_token,
+                    filename=path.name,
+                    content_type=content_type,
+                )
+            except SACAuthorizationError as exc:
+                state["sac_oauth_token"] = None
+                raise ValueError(
+                    f"{exc}. Reconnect the API and retry this proposal; "
+                    "completed image uploads are saved."
+                ) from exc
             upload_media_file(
                 path,
                 upload["url"],
@@ -1467,11 +1546,18 @@ def create_app(
             marker_images.append(image)
 
         actions["images"] = marker_images
-        edit = submit_marker_creation(
-            access_token,
-            actions,
-            edit_comment=edit_comment,
-        )
+        try:
+            edit = submit_marker_creation(
+                access_token,
+                actions,
+                edit_comment=edit_comment,
+            )
+        except SACAuthorizationError as exc:
+            state["sac_oauth_token"] = None
+            raise ValueError(
+                f"{exc}. Reconnect the API and retry this proposal; completed "
+                "image uploads are saved."
+            ) from exc
         receipt["state"] = "submitted"
         receipt["edit"] = edit
         receipt["completed_at"] = datetime.now().astimezone().isoformat()

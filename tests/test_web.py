@@ -15,7 +15,9 @@ from street_art_photo_assistant.metadata import (
 )
 from street_art_photo_assistant.photos import read_photo
 from street_art_photo_assistant.runs import RunManager
+from street_art_photo_assistant.sac import SACAuthorizationError
 from street_art_photo_assistant.web import (
+    _artist_tags,
     _choose_folder,
     _fill_artist_names,
     _suggest_artist_slugs,
@@ -325,6 +327,71 @@ class WebTests(unittest.TestCase):
         })
         self.assertFalse(duplicate.get_json()["added"])
 
+    def test_local_artist_destination_creates_ignored_overlay(self):
+        response = self.client.post("/api/artists", json={
+            "tag": "Local Artist",
+            "slug": "local-artist",
+            "name": "Local Artist",
+            "destination": "local",
+        })
+
+        self.assertEqual(200, response.status_code, response.get_data(as_text=True))
+        self.assertTrue(response.get_json()["added"])
+        local = self.root / "data" / "artists.local.csv"
+        self.assertEqual(str(local), response.get_json()["path"])
+        self.assertIn(
+            "Local Artist;local-artist;Local Artist;;confirmed",
+            local.read_text(encoding="utf-8"),
+        )
+
+    def test_artist_destination_rejects_unknown_values(self):
+        response = self.client.post("/api/artists", json={
+            "tag": "Unknown Destination",
+            "destination": "..\\elsewhere.csv",
+        })
+
+        self.assertEqual(400, response.status_code)
+        self.assertFalse((self.root / "elsewhere.csv").exists())
+
+    def test_main_artist_mapping_precedes_local_overlay(self):
+        data = self.root / "data"
+        data.mkdir(parents=True, exist_ok=True)
+        main = data / "artists.csv"
+        local = data / "artists.local.csv"
+        main.write_text(
+            "tag;streetartcities_slug;streetartcities_name;instagram;status\n"
+            "Shared;public-slug;Public Name;public.handle;confirmed\n",
+            encoding="utf-8",
+        )
+        local.write_text(
+            "tag;streetartcities_slug;streetartcities_name;instagram;status\n"
+            "Shared;;Local Name;local.handle;confirmed\n"
+            "Local Artist;local-artist;Local Artist;local.artist;confirmed\n",
+            encoding="utf-8",
+        )
+
+        tags, by_slug, details = _artist_tags((main, local))
+
+        self.assertEqual(["Local Artist", "Shared"], tags)
+        self.assertEqual(["Shared"], by_slug["public-slug"])
+        self.assertEqual("Public Name", details["public-slug"]["name"])
+        self.assertEqual(["Local Artist"], by_slug["local-artist"])
+        self.assertEqual(
+            [],
+            _suggest_artist_slugs(
+                (main, local),
+                [{"slug": "replacement", "name": "Shared"}],
+            ),
+        )
+
+        duplicate = self.client.post("/api/artists", json={
+            "tag": "shared",
+            "slug": "replacement",
+            "instagram": "replacement",
+        })
+        self.assertFalse(duplicate.get_json()["added"])
+        self.assertNotIn("replacement", local.read_text(encoding="utf-8"))
+
     def test_display_name_requires_a_slug(self):
         response = self.client.post("/api/artists", json={
             "tag": "Nameless",
@@ -374,7 +441,7 @@ class WebTests(unittest.TestCase):
         )
 
     def test_legacy_artist_rows_gain_the_name_column_on_append(self):
-        artists = self.root / "data" / "artists.csv"
+        artists = self.root / "data" / "artists.local.csv"
         artists.parent.mkdir(parents=True, exist_ok=True)
         artists.write_text(
             "tag;streetartcities_slug;instagram;status\n"
@@ -386,6 +453,7 @@ class WebTests(unittest.TestCase):
             "tag": "Fresh Artist",
             "slug": "fresh-artist",
             "name": "Fresh Artist",
+            "destination": "local",
         })
 
         self.assertEqual(200, response.status_code, response.get_data(as_text=True))
@@ -475,6 +543,18 @@ class WebTests(unittest.TestCase):
                 "cached_image": None,
             }],
         }
+        tagged_paths = [
+            Path(photo["path"])
+            for photo in [
+                *report["clusters"][0]["photos"],
+                *report["clusters"][0]["context_photos"],
+            ]
+        ]
+        apply_tag_edit_plan(
+            build_tag_edit_plan(tagged_paths, add=["Test Artist"]),
+            allowed_roots=[self.photos],
+            change_log_path=self.root / "artist-links-change.json",
+        )
         (self.manager.run_root / started["id"] / "report.json").write_text(
             json.dumps(report), encoding="utf-8"
         )
@@ -515,7 +595,25 @@ class WebTests(unittest.TestCase):
             detail_page,
         )
         self.assertIn("https://www.instagram.com/test.artist/", detail_page)
+        self.assertIn('class="tag-artist-links"', detail_page)
+        self.assertIn(
+            'title="Open Test Artist on Street Art Cities"',
+            detail_page,
+        )
+        self.assertIn(
+            'title="Open Test Artist on Instagram"',
+            detail_page,
+        )
         self.assertIn('id="artist-csv-dialog"', detail_page)
+        self.assertIn('id="artist-csv-destination"', detail_page)
+        self.assertIn(
+            '<option value="main" selected>Add to artists.csv</option>',
+            detail_page,
+        )
+        self.assertIn(
+            '<option value="local">Add to artists.local.csv</option>',
+            detail_page,
+        )
         self.assertIn("maybeAddArtistToCsv", detail_page)
         self.assertIn("applyTagChange", detail_page)
         self.assertIn('class="button success"', detail_page)
@@ -699,6 +797,23 @@ class WebTests(unittest.TestCase):
         review_url = (
             "https://streetartcities.com/community/review-queue/edit-1"
         )
+        submission = {
+            "proposal_token": proposal_token,
+            "photos": [photo_path],
+            "city": "test-city",
+            "latitude": 48.0,
+            "longitude": 2.0,
+            "title": "",
+            "description": "Reviewed description.",
+            "tags": ["mural"],
+            "artists": [{"id": "test-artist", "title": ""}],
+            "attributes": {
+                "artist_nationality": ["France"],
+                "artwork_type": "Mural",
+            },
+            "attribution": "Synthetic Hunter",
+            "edit_comment": "Synthetic proposal",
+        }
         with (
             patch(
                 "street_art_photo_assistant.web.request_media_upload",
@@ -709,44 +824,48 @@ class WebTests(unittest.TestCase):
                         "https://streetartcities.com/media/test/orig.jpg"
                     ),
                 },
-            ),
+            ) as request_upload,
             patch(
                 "street_art_photo_assistant.web.upload_media_file"
             ) as upload_file,
             patch(
                 "street_art_photo_assistant.web.submit_marker_creation",
-                return_value={
-                    "id": "edit-1",
-                    "status": "submitted",
-                    "reviewUrl": review_url,
-                },
+                side_effect=[
+                    SACAuthorizationError("authorization expired"),
+                    {
+                        "id": "edit-1",
+                        "status": "submitted",
+                        "reviewUrl": review_url,
+                    },
+                ],
             ) as submit_creation,
         ):
+            rejected = self.client.post(
+                "/api/sac/proposals/submit",
+                json=submission,
+            )
+            self.assertEqual(400, rejected.status_code)
+            self.assertIn(
+                "Reconnect the API and retry",
+                rejected.get_json()["error"],
+            )
+            self.assertIsNone(state["sac_oauth_token"])
+            state["sac_oauth_token"] = {
+                "access_token": "replacement-access-token",
+                "scope": "edits:read edits:write",
+                "expires_at": time.time() + 3600,
+            }
             response = self.client.post(
                 "/api/sac/proposals/submit",
-                json={
-                    "proposal_token": proposal_token,
-                    "photos": [photo_path],
-                    "city": "test-city",
-                    "latitude": 48.0,
-                    "longitude": 2.0,
-                    "title": "",
-                    "description": "Reviewed description.",
-                    "tags": ["mural"],
-                    "artists": [{"id": "test-artist", "title": ""}],
-                    "attributes": {
-                        "artist_nationality": ["France"],
-                        "artwork_type": "Mural",
-                    },
-                    "attribution": "Synthetic Hunter",
-                    "edit_comment": "Synthetic proposal",
-                },
+                json=submission,
             )
 
         self.assertEqual(200, response.status_code, response.get_data(as_text=True))
         result = response.get_json()
         self.assertEqual("edit-1", result["edit"]["id"])
         upload_file.assert_called_once()
+        request_upload.assert_called_once()
+        self.assertEqual(2, submit_creation.call_count)
         actions = submit_creation.call_args.args[1]
         self.assertEqual("test-city", actions["city"])
         self.assertEqual(

@@ -30,8 +30,14 @@
 
   <dialog id="artist-csv-dialog" class="artist-dialog">
     <form method="dialog">
-      <h2>Add to artists.csv</h2>
+      <h2>Add artist mapping</h2>
       <label>Tag <input id="artist-csv-tag" required></label>
+      <label>Destination
+        <select id="artist-csv-destination">
+          <option value="main" selected>Add to artists.csv</option>
+          <option value="local">Add to artists.local.csv</option>
+        </select>
+      </label>
       <label>Street Art Cities slug
         <a href="https://streetartcities.com/artists" target="_blank" rel="noopener">Find artist on SAC ↗</a>
         <input id="artist-csv-slug" placeholder="for example: le-cyklop">
@@ -46,7 +52,7 @@
       <p id="artist-csv-error" class="error"></p>
       <div class="button-row">
         <button id="artist-csv-cancel" type="button">Cancel</button>
-        <button id="artist-csv-save" class="primary" type="button">Save to CSV</button>
+        <button id="artist-csv-save" class="primary" type="button">Save mapping</button>
       </div>
     </form>
   </dialog>
@@ -58,7 +64,8 @@
         <div class="common-tags">
           <strong>On all photos:</strong>
           {% for tag in common_tags %}
-            <span class="tag">{{ tag }}<button type="button" title="Remove from every image" onclick='applyTagChange(allPhotoPaths, [], [{{ tag|tojson }}])' {% if read_only %}disabled{% endif %}>×</button></span>
+            {% set links = common_tag_links.get(tag) %}
+            <span class="tag">{{ tag }}{% if links %}<span class="tag-artist-links"><a href="{{ links.sac }}" target="_blank" rel="noopener noreferrer" title="Open {{ tag }} on Street Art Cities">SAC ↗</a>{% if links.instagram %}<a href="{{ links.instagram }}" target="_blank" rel="noopener noreferrer" title="Open {{ tag }} on Instagram">Instagram ↗</a>{% endif %}</span>{% endif %}<button type="button" title="Remove from every image" onclick='applyTagChange(allPhotoPaths, [], [{{ tag|tojson }}])' {% if read_only %}disabled{% endif %}>×</button></span>
           {% else %}
             <span class="muted">no common tag</span>
           {% endfor %}
@@ -100,7 +107,8 @@
               <div class="tags">
                 <strong>Existing tags:</strong>
                 {% for tag in photo.tags %}
-                  <span class="tag">{{ tag }}<button type="button" title="Remove from this image" onclick='applyTagChange([{{ photo.path|tojson }}], [], [{{ tag|tojson }}])' {% if read_only %}disabled{% endif %}>×</button></span>
+                  {% set links = photo.tag_links.get(tag) %}
+                  <span class="tag">{{ tag }}{% if links %}<span class="tag-artist-links"><a href="{{ links.sac }}" target="_blank" rel="noopener noreferrer" title="Open {{ tag }} on Street Art Cities">SAC ↗</a>{% if links.instagram %}<a href="{{ links.instagram }}" target="_blank" rel="noopener noreferrer" title="Open {{ tag }} on Instagram">Instagram ↗</a>{% endif %}</span>{% endif %}<button type="button" title="Remove from this image" onclick='applyTagChange([{{ photo.path|tojson }}], [], [{{ tag|tojson }}])' {% if read_only %}disabled{% endif %}>×</button></span>
                 {% else %}
                   <span class="muted">none</span>
                 {% endfor %}
@@ -508,6 +516,7 @@ function maybeAddArtistToCsv(tag) {
     const slugInput = document.getElementById('artist-csv-slug');
     const nameInput = document.getElementById('artist-csv-name');
     const instagramInput = document.getElementById('artist-csv-instagram');
+    const destinationInput = document.getElementById('artist-csv-destination');
     const error = document.getElementById('artist-csv-error');
     let settled = false;
     const finish = () => {
@@ -520,6 +529,7 @@ function maybeAddArtistToCsv(tag) {
     slugInput.value = candidateSlugsByName.get(tag.toLocaleLowerCase()) || '';
     nameInput.value = candidateNamesByName.get(tag.toLocaleLowerCase()) || '';
     instagramInput.value = '';
+    destinationInput.value = 'main';
     error.textContent = '';
     document.getElementById('artist-csv-cancel').onclick = finish;
     dialog.oncancel = event => {
@@ -532,7 +542,8 @@ function maybeAddArtistToCsv(tag) {
           tag: tagInput.value.trim(),
           slug: slugInput.value.trim(),
           name: nameInput.value.trim(),
-          instagram: instagramInput.value.trim()
+          instagram: instagramInput.value.trim(),
+          destination: destinationInput.value
         });
         knownArtistTags.add(tagInput.value.trim().toLocaleLowerCase());
         finish();

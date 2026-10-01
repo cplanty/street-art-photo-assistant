@@ -373,6 +373,9 @@ def run_offline_clustering(
             clusters,
             city_payload,
             artist_mapping_path=_resolve(config_root, paths["artists"]),
+            artist_mapping_overlays=(
+                _resolve(config_root, paths["local_artists"]),
+            ),
             reference_cache=_resolve(
                 config_root, paths["reference_images"]
             ),

@@ -8,10 +8,12 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlparse
 
+import requests
 from PIL import Image
 
 from street_art_photo_assistant.models import PhotoCluster
 from street_art_photo_assistant.sac import (
+    SACAuthorizationError,
     USER_AGENT,
     RequestThrottle,
     cache_city_images,
@@ -21,6 +23,7 @@ from street_art_photo_assistant.sac import (
     create_pkce_pair,
     exchange_pkce_code,
     fetch_collections,
+    load_artist_mapping,
     nearby_candidates,
     oauth_authorization_url,
     refresh_city,
@@ -136,6 +139,10 @@ class SACTests(unittest.TestCase):
             "https://streetartcities.com/media/test/orig.jpg",
             upload["publicUrl"],
         )
+        self.assertEqual(
+            "Bearer " + "test-access-token",
+            session.get.call_args.kwargs["headers"]["Authorization"],
+        )
 
         session.put.return_value = FakeResponse()
         with tempfile.TemporaryDirectory() as temporary:
@@ -176,6 +183,51 @@ class SACTests(unittest.TestCase):
         self.assertNotIn("entityId", body)
         self.assertEqual("marker", body["entityType"])
         self.assertEqual("test-city", body["actions"]["city"])
+        self.assertEqual(
+            "Bearer " + "test-access-token",
+            session.post.call_args.kwargs["headers"]["Authorization"],
+        )
+
+    def test_local_artist_overlay_adds_without_overriding_main(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            main = root / "artists.csv"
+            local = root / "artists.local.csv"
+            main.write_text(
+                "tag;streetartcities_slug\n"
+                "Shared;public-slug\n",
+                encoding="utf-8",
+            )
+            local.write_text(
+                "tag;streetartcities_slug\n"
+                "Shared;local-slug\n"
+                "Local Artist;local-artist\n",
+                encoding="utf-8",
+            )
+
+            mapping = load_artist_mapping(main, (local,))
+
+        self.assertEqual("public-slug", mapping["shared"])
+        self.assertEqual("local-artist", mapping["local artist"])
+
+    def test_marker_creation_reports_rejected_oauth_token(self):
+        response = Mock(status_code=401)
+        response.raise_for_status.side_effect = requests.HTTPError(
+            "401 Client Error: Unauthorized",
+            response=response,
+        )
+        session = Mock()
+        session.post.return_value = response
+
+        with self.assertRaisesRegex(
+            SACAuthorizationError,
+            "rejected authorization",
+        ):
+            submit_marker_creation(
+                "rejected-token",
+                {"city": "test-city"},
+                session=session,
+            )
 
     def test_refresh_normalizes_and_caches_all_artwork_statuses(self):
         removed = {**self.marker_item(), "id": "marker-2", "status": "removed"}

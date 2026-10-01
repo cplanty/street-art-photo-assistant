@@ -25,6 +25,8 @@ affiliated with or endorsed by Street Art Cities.
 - Sort the dashboard by index, tag, capture time, photo count, or SAC status;
   cluster navigation follows that order.
 - Apply artist-assisted tags directly to one, selected, or all cluster images.
+- Combine the committed artist catalogue with a gitignored per-user overlay,
+  keeping local additions out of version control.
 - Reposition selected images together or drag individual photo markers to
   independent coordinates before previewing the write.
 - Optionally refresh a complete Street Art Cities city marker set and compare

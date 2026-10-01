@@ -57,13 +57,18 @@ apply endpoints while keeping preview and reports available.
 - Visual matching uses a fixed local ORB threshold; the profile changes only
   candidate effort, not GPS or clustering thresholds.
 
-`data/artists.csv` remains the public tag-to-provider mapping. After a tag plan
-adds a non-internal tag that is not already present, the reviewer offers an
-**Add to artists.csv** helper for confirming its Street Art Cities slug,
-Street Art Cities display name, and Instagram handle. Both provider fields are
-prefilled from the nearby candidate whose artist string matches the tag. The
-CSV update is atomic; `_`-prefixed workflow tags are never offered for
-insertion.
+`paths.artists` is the committed public tag-to-provider mapping.
+`paths.local_artists` is its gitignored per-user overlay. Reads combine both
+files, with the public row winning when the same tag occurs in both. After a
+tag plan adds a non-internal tag that is not already present in either file,
+the reviewer offers a helper for confirming its Street Art Cities slug,
+display name, and Instagram handle. Both provider fields are prefilled from
+the nearby candidate whose artist string matches the tag. The destination
+selector defaults to the committed `artists.csv`; choose
+`artists.local.csv` for a user-only addition. Either destination is created
+with the standard header when missing, and writes are atomic. The default
+local path is excluded by `.gitignore`; `_`-prefixed workflow tags are never
+offered for insertion.
 
 ## Provider boundary
 
