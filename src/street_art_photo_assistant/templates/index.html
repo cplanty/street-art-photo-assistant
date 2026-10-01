@@ -204,6 +204,7 @@
     <label>Run label <input id="run_label" placeholder="optional"></label>
     <button id="run-button" class="primary" type="button" onclick="startRun()" disabled>Refresh &amp; run</button>
     <button id="run-cancel-button" type="button" onclick="cancelCurrentRun()" disabled>Cancel</button>
+    <a id="run-connect-button" class="button primary" href="{{ url_for('sac_login') }}" onclick="connectSacApi(event)" hidden>Connect API</a>
     <span id="run-message" class="muted"></span>
     <div id="run-progress-panel" class="run-progress" hidden>
       <div class="run-progress-heading">
@@ -248,6 +249,7 @@ let previewToken = null;
 let gpsPlanId = null;
 let autosaveTimer = null;
 let currentRun = {{ active_run_id|tojson }};
+const sacApiConnected = {{ sac_api_connected|tojson }};
 
 const byId = id => document.getElementById(id);
 const lines = id => byId(id).value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
@@ -576,8 +578,22 @@ async function applyGps() {
 async function startRun() {
   if (!previewToken) return;
   readForm();
+  if (
+    config.matching.street_art_cities_enabled
+    && config.matching.marker_source === 'oauth-markers-api'
+    && !sacApiConnected
+  ) {
+    byId('run-message').className = 'error';
+    byId('run-message').textContent =
+      'Connect the Street Art Cities API before starting an authenticated marker run.';
+    byId('run-connect-button').hidden = false;
+    byId('run-progress-panel').hidden = true;
+    return;
+  }
   byId('run-button').disabled = true;
   byId('run-cancel-button').disabled = true;
+  byId('run-connect-button').hidden = true;
+  byId('run-message').className = 'muted';
   byId('run-message').textContent = 'Starting…';
   byId('run-progress-panel').hidden = false;
   try {
@@ -589,7 +605,17 @@ async function startRun() {
     byId('run-cancel-button').disabled = false;
     pollRun();
   } catch (error) {
+    currentRun = null;
+    byId('run-progress-panel').hidden = true;
+    byId('run-progress').value = 0;
+    byId('run-progress-stage').textContent = 'Not started';
+    byId('run-progress-percent').textContent = '0%';
+    byId('run-progress-detail').textContent = '';
+    byId('run-message').className = 'error';
     byId('run-message').textContent = error.message;
+    byId('run-connect-button').hidden = !error.message.includes(
+      'Connect the Street Art Cities API'
+    );
     byId('run-button').disabled = !previewToken;
     byId('run-cancel-button').disabled = true;
   }

@@ -275,6 +275,16 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(400, response.status_code)
         self.assertIn("Connect", response.get_json()["error"])
+        page = self.client.get("/").get_data(as_text=True)
+        self.assertIn("const sacApiConnected = false;", page)
+        self.assertIn(
+            "Connect the Street Art Cities API before starting an "
+            "authenticated marker run.",
+            page,
+        )
+        self.assertIn('id="run-connect-button"', page)
+        self.assertIn("byId('run-connect-button').hidden = false", page)
+        self.assertIn("byId('run-progress-panel').hidden = true", page)
 
     def test_reference_route_is_confined_to_configured_cache(self):
         cache = self.root / "data" / "ref_images"

@@ -158,3 +158,9 @@ and completed image uploads are reused. OAuth tokens are never written to the re
 Each run owns a directory containing its config snapshot, manifest, command,
 log, progress, preview, JSON report, and Markdown report. Active runs can be
 cancelled. Inactive runs can be deleted from the generator after confirmation.
+
+When the OAuth Markers API is selected, connect Street Art Cities before
+generating the report. A disconnected start is rejected before a run is
+created; the generator hides its inactive progress panel and displays the
+reconnect requirement with a **Connect API** action instead of remaining at
+queued 0%.
