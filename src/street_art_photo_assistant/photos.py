@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 from iptcinfo3 import IPTCInfo
 from PIL import Image
@@ -79,9 +80,7 @@ def read_keywords(path: Path) -> tuple[str, ...]:
     return tuple(dict.fromkeys(tag for tag in keywords if tag))
 
 
-def read_photo(path: Path, source: str) -> PhotoRecord:
-    """Read one JPEG into the normalized public photo contract."""
-
+def _read_photo_metadata(path: Path, source: str) -> PhotoRecord:
     try:
         with Image.open(path) as image:
             width, height = image.size
@@ -103,23 +102,34 @@ def read_photo(path: Path, source: str) -> PhotoRecord:
     except (OSError, SyntaxError, TypeError, ValueError) as exc:
         raise ValueError(f"Could not read photo metadata: {path}") from exc
 
-    try:
-        tags = read_keywords(path)
-    except (OSError, SyntaxError, TypeError, ValueError) as exc:
-        raise ValueError(f"Could not read photo keywords: {path}") from exc
     return PhotoRecord(
         path=path.resolve(),
         source=source,
         captured_at=captured_at,
         latitude=latitude,
         longitude=longitude,
-        tags=tags,
+        tags=(),
         width=width,
         height=height,
     )
 
 
-def scan_sources(sources: Iterable[PhotoSource]) -> list[PhotoRecord]:
+def read_photo(path: Path, source: str) -> PhotoRecord:
+    """Read one JPEG into the normalized public photo contract."""
+
+    photo = _read_photo_metadata(path, source)
+    try:
+        tags = read_keywords(path)
+    except (OSError, SyntaxError, TypeError, ValueError) as exc:
+        raise ValueError(f"Could not read photo keywords: {path}") from exc
+    return replace(photo, tags=tags)
+
+
+def scan_sources(
+    sources: Iterable[PhotoSource],
+    *,
+    read_keywords_for: Callable[[PhotoRecord], bool] | None = None,
+) -> list[PhotoRecord]:
     """Scan enabled sources and fail explicitly on unreadable photos."""
 
     records: list[PhotoRecord] = []
@@ -127,5 +137,13 @@ def scan_sources(sources: Iterable[PhotoSource]) -> list[PhotoRecord]:
         if not source.enabled:
             continue
         for path in discover_jpegs(source.path):
-            records.append(read_photo(path, source.name))
+            photo = _read_photo_metadata(path, source.name)
+            if read_keywords_for is None or read_keywords_for(photo):
+                try:
+                    photo = replace(photo, tags=read_keywords(path))
+                except (OSError, SyntaxError, TypeError, ValueError) as exc:
+                    raise ValueError(
+                        f"Could not read photo keywords: {path}"
+                    ) from exc
+            records.append(photo)
     return records

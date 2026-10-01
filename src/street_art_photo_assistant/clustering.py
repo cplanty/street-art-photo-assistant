@@ -62,6 +62,48 @@ def _tag_set(values: Iterable[str]) -> set[str]:
     return {value.casefold() for value in values}
 
 
+def photo_matches_time(
+    photo: PhotoRecord,
+    criteria: SelectionCriteria,
+) -> bool:
+    """Return whether a photo passes the configured capture-time window."""
+
+    if not (
+        criteria.start
+        or criteria.end
+        or criteria.start_time
+        or criteria.end_time
+    ):
+        return True
+    if photo.captured_at is None:
+        return False
+    start_at = (
+        datetime.combine(criteria.start, criteria.start_time or time.min)
+        if criteria.start else None
+    )
+    end_at = (
+        datetime.combine(criteria.end, criteria.end_time or time.max)
+        if criteria.end else None
+    )
+    if start_at and photo.captured_at < start_at:
+        return False
+    if end_at and photo.captured_at > end_at:
+        return False
+    if (
+        not criteria.start
+        and criteria.start_time
+        and photo.captured_at.time() < criteria.start_time
+    ):
+        return False
+    if (
+        not criteria.end
+        and criteria.end_time
+        and photo.captured_at.time() > criteria.end_time
+    ):
+        return False
+    return True
+
+
 def select_photos(
     photos: Iterable[PhotoRecord],
     criteria: SelectionCriteria,
@@ -76,36 +118,11 @@ def select_photos(
     exclude = _tag_set(criteria.exclude_tags)
     scanned = list(photos)
     selected: list[PhotoRecord] = []
-    start_at = (
-        datetime.combine(criteria.start, criteria.start_time or time.min)
-        if criteria.start else None
-    )
-    end_at = (
-        datetime.combine(criteria.end, criteria.end_time or time.max)
-        if criteria.end else None
-    )
 
     for photo in scanned:
         tags = _tag_set(photo.tags)
-        if criteria.start or criteria.end or criteria.start_time or criteria.end_time:
-            if photo.captured_at is None:
-                continue
-            if start_at and photo.captured_at < start_at:
-                continue
-            if end_at and photo.captured_at > end_at:
-                continue
-            if (
-                not criteria.start
-                and criteria.start_time
-                and photo.captured_at.time() < criteria.start_time
-            ):
-                continue
-            if (
-                not criteria.end
-                and criteria.end_time
-                and photo.captured_at.time() > criteria.end_time
-            ):
-                continue
+        if not photo_matches_time(photo, criteria):
+            continue
         if criteria.tagged_mode == "tagged" and not tags:
             continue
         if criteria.tagged_mode == "untagged" and tags:

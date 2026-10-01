@@ -10,7 +10,12 @@ from pathlib import Path
 from time import sleep
 from typing import Any
 
-from .clustering import SelectionCriteria, cluster_photos, select_photos
+from .clustering import (
+    SelectionCriteria,
+    cluster_photos,
+    photo_matches_time,
+    select_photos,
+)
 from .matching import visual_subcluster
 from .models import PhotoSource
 from .photos import scan_sources
@@ -130,10 +135,12 @@ def scan_and_select(
 ) -> tuple[list, list, object]:
     """Scan configured sources and apply the exact configured selection."""
 
-    scanned = scan_sources(sources_from_config(config, config_root))
-    selected, preview = select_photos(
-        scanned, selection_from_config(config)
+    criteria = selection_from_config(config)
+    scanned = scan_sources(
+        sources_from_config(config, config_root),
+        read_keywords_for=lambda photo: photo_matches_time(photo, criteria),
     )
+    selected, preview = select_photos(scanned, criteria)
     return scanned, selected, preview
 
 

@@ -2,9 +2,15 @@ import tempfile
 import unittest
 from pathlib import Path
 from shutil import copy2
+from unittest.mock import patch
 
 from street_art_photo_assistant.models import PhotoSource
-from street_art_photo_assistant.photos import discover_jpegs, read_photo, scan_sources
+from street_art_photo_assistant.photos import (
+    discover_jpegs,
+    read_keywords,
+    read_photo,
+    scan_sources,
+)
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -37,7 +43,30 @@ class PhotoTests(unittest.TestCase):
         self.assertEqual(1, len(records))
         self.assertEqual("Enabled", records[0].source)
 
+    def test_scan_can_defer_keywords_for_rejected_metadata(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            copy2(FIXTURES / "located.jpg", folder / "selected.jpg")
+            copy2(FIXTURES / "located.jpg", folder / "rejected.jpg")
+            with patch(
+                "street_art_photo_assistant.photos.read_keywords",
+                wraps=read_keywords,
+            ) as read:
+                records = scan_sources(
+                    [PhotoSource("Camera", folder)],
+                    read_keywords_for=lambda photo: (
+                        photo.path.name == "selected.jpg"
+                    ),
+                )
+
+        self.assertEqual(
+            ["rejected.jpg", "selected.jpg"],
+            [photo.path.name for photo in records],
+        )
+        self.assertEqual(1, read.call_count)
+        self.assertFalse(records[0].tags)
+        self.assertIn("StreetArt", records[1].tags)
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -18,7 +18,9 @@ local folders
 - `config.py` owns versioned JSON configuration and atomic persistence.
 - `models.py` defines shared photo, cluster, fingerprint, repair-plan, and run
   contracts.
-- `photos.py` discovers photos and normalizes metadata.
+- `photos.py` discovers photos and normalizes metadata. Selection scans read
+  capture metadata first and defer keyword parsing until after the configured
+  capture-time window, avoiding expensive IPTC reads for out-of-window files.
 - `clustering.py` selects and groups normalized records.
 - `metadata.py` owns previewed atomic flat-keyword writes.
 - `gps.py` creates and validates deterministic missing/manual GPS plans.
