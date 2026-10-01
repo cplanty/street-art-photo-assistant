@@ -22,6 +22,24 @@ def image_similarity(left: Path, right: Path) -> float | None:
     right_image = cv2.imread(str(right), cv2.IMREAD_GRAYSCALE)
     if left_image is None or right_image is None:
         raise ValueError(f"Could not decode images for matching: {left}, {right}")
+    target_dimension = min(
+        1024,
+        max(left_image.shape),
+        max(right_image.shape),
+    )
+
+    def normalized(image):
+        scale = target_dimension / max(image.shape)
+        if scale == 1:
+            return image
+        size = (
+            max(1, round(image.shape[1] * scale)),
+            max(1, round(image.shape[0] * scale)),
+        )
+        return cv2.resize(image, size, interpolation=cv2.INTER_AREA)
+
+    left_image = normalized(left_image)
+    right_image = normalized(right_image)
     detector = cv2.ORB_create(nfeatures=1200)
     left_keypoints, left_descriptors = detector.detectAndCompute(left_image, None)
     right_keypoints, right_descriptors = detector.detectAndCompute(
@@ -112,4 +130,3 @@ def visual_subcluster(
         for cluster in clusters
         for subgroup in split_cluster(cluster, threshold=threshold)
     ]
-

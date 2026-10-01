@@ -249,10 +249,11 @@ detection. An existing Street Art Cities artwork may not be identified for
 several reasons:
 
 - **Visual matching:** The lightweight ORB algorithm compares features across
-  the complete image; it does not isolate the artwork. Background details can
-  dominate the result, while changes in viewpoint, framing, light, obstruction,
-  deterioration, or repainting can reduce similarity. Similar surroundings can
-  also produce a misleading match.
+  the complete image after normalizing the original and provider derivative to
+  a shared bounded scale; it does not isolate the artwork. Background details
+  can dominate the result, while changes in viewpoint, framing, light,
+  obstruction, deterioration, or repainting can reduce similarity. Similar
+  surroundings can also produce a misleading match.
 - **Search radius:** Only markers within `matching.candidate_radius_m` are
   considered. Photo or marker GPS drift can exceed the default radius and has
   been observed at roughly 200 metres. Increasing the radius can recover such
