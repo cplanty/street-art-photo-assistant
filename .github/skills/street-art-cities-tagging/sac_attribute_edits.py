@@ -24,7 +24,7 @@ PREVIEW_SCOPES = ("markers:read", "edits:read")
 APPLY_SCOPES = ("markers:read", "edits:write", "edits:read")
 PLAN_VERSION = 1
 USER_AGENT = "StreetArtPhotoAssistant-SAC-Tagging-Skill/1"
-SCALAR_CORE_PATHS = {"description"}
+SCALAR_CORE_PATHS = {"description", "title"}
 
 
 @dataclass(frozen=True)
@@ -172,6 +172,33 @@ def matching_pending_edit_ids(
     return matches
 
 
+def matching_pending_scalar_edit_ids(
+    edits: Iterable[object],
+    marker_id_value: str,
+    path: str,
+    desired: str,
+) -> list[str]:
+    matches: list[str] = []
+    for candidate in edits:
+        if not isinstance(candidate, dict):
+            continue
+        if (
+            candidate.get("status") != "submitted"
+            or candidate.get("entityType") != "marker"
+            or candidate.get("entityId") != marker_id_value
+            or not scalar_values_equal(
+                path,
+                value_at_path(candidate.get("actions", {}), path),
+                desired,
+            )
+        ):
+            continue
+        edit_id = str(candidate.get("id") or "")
+        if edit_id:
+            matches.append(edit_id)
+    return matches
+
+
 class CallbackHandler(BaseHTTPRequestHandler):
     result: OAuthResult | None = None
     expected_state = ""
@@ -310,9 +337,23 @@ def preview(args: argparse.Namespace) -> None:
         raise FileExistsError(f"Plan already exists: {output}")
     client_id = load_client_id(args.client_id, Path(args.config))
     path = args.path.strip()
-    if not path.startswith("attributes.") or path.count(".") != 1:
-        raise ValueError("--path must be attributes.<attribute-name>")
+    scalar = path in SCALAR_CORE_PATHS
+    if not scalar and (
+        not path.startswith("attributes.") or path.count(".") != 1
+    ):
+        allowed = ", ".join(sorted(SCALAR_CORE_PATHS))
+        raise ValueError(
+            "--path must be attributes.<attribute-name> or an allowed "
+            f"core field: {allowed}"
+        )
     desired = unique_values(args.value)
+    if scalar and len(desired) != 1:
+        raise ValueError("Scalar fields require exactly one --value")
+    replace_values = (
+        unique_values(args.replace_value) if args.replace_value else []
+    )
+    if replace_values and path != "title":
+        raise ValueError("--replace-value is supported only for title")
     marker_ids = list(dict.fromkeys(marker_id(value) for value in args.marker))
     token = authorize(client_id, PREVIEW_SCOPES)
     edits: list[object] = []
@@ -324,8 +365,46 @@ def preview(args: argparse.Namespace) -> None:
         edits.append(edit)
 
     targets: list[dict[str, Any]] = []
+    pending_targets: list[dict[str, Any]] = []
+    no_op_targets: list[dict[str, Any]] = []
     for target_id in marker_ids:
         marker = api_request("GET", f"/api/markers/{target_id}", token)
+        if scalar:
+            existing_scalar = value_at_path(marker, path)
+            if (
+                existing_scalar not in (None, "")
+                and existing_scalar not in replace_values
+            ):
+                no_op_targets.append(
+                    {
+                        "marker_id": target_id,
+                        "current": existing_scalar,
+                    }
+                )
+                continue
+            pending_edit_ids = matching_pending_scalar_edit_ids(
+                edits,
+                target_id,
+                path,
+                desired[0],
+            )
+            if pending_edit_ids:
+                pending_targets.append(
+                    {
+                        "marker_id": target_id,
+                        "pending_edit_ids": pending_edit_ids,
+                    }
+                )
+                continue
+            targets.append(
+                {
+                    "marker_id": target_id,
+                    "updated_at": marker.get("updatedAt"),
+                    "current": {path: existing_scalar},
+                    "actions": {path: desired[0]},
+                }
+            )
+            continue
         existing = normalize_existing(value_at_path(marker, path), path)
         missing = missing_values(existing, desired)
         targets.append(
@@ -343,14 +422,47 @@ def preview(args: argparse.Namespace) -> None:
             }
         )
 
-    plan = {
-        "version": PLAN_VERSION,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "path": path,
-        "values": desired,
-        "targets": targets,
-    }
+    if scalar:
+        plan = {
+            "version": PLAN_VERSION,
+            "kind": "scalar-actions",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "path": path,
+            "value": desired[0],
+            "replace_values": replace_values,
+            "targets": targets,
+            "pending_targets": pending_targets,
+            "no_op_targets": no_op_targets,
+        }
+    else:
+        plan = {
+            "version": PLAN_VERSION,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "path": path,
+            "values": desired,
+            "targets": targets,
+        }
     atomic_write_json(output, plan)
+    if scalar:
+        print(f"Plan: {output}")
+        print(
+            f"Targets: {len(marker_ids)}; proposed edits: {len(targets)}; "
+            f"matching pending: {len(pending_targets)}; "
+            f"no-ops: {len(no_op_targets)}"
+        )
+        for target in targets:
+            print(
+                f"- {target['marker_id']}: set {path} to "
+                f"{json.dumps(desired[0], ensure_ascii=False)}"
+            )
+        for target in pending_targets:
+            print(
+                f"- {target['marker_id']}: already pending "
+                + ", ".join(target["pending_edit_ids"])
+            )
+        for target in no_op_targets:
+            print(f"- {target['marker_id']}: no-op")
+        return
     pending = sum(bool(target["pending_edit_ids"]) for target in targets)
     proposed = sum(
         bool(target["missing"]) and not target["pending_edit_ids"]
@@ -395,6 +507,11 @@ def validate_scalar_plan(plan: dict[str, Any]) -> list[dict[str, Any]]:
     if plan.get("version") != PLAN_VERSION:
         raise ValueError("Unsupported scalar plan version")
     targets = plan.get("targets")
+    replace_values = plan.get("replace_values", [])
+    if not isinstance(replace_values, list) or not all(
+        isinstance(value, str) and value for value in replace_values
+    ):
+        raise ValueError("Scalar plan has invalid replacement values")
     if not isinstance(targets, list) or not targets:
         raise ValueError("Scalar plan has no targets")
     for target in targets:
@@ -421,7 +538,13 @@ def validate_scalar_plan(plan: dict[str, Any]) -> list[dict[str, Any]]:
                 )
             if path not in current:
                 raise ValueError(f"Scalar plan has no current value for {path}")
-            if current[path] not in (None, ""):
+            if (
+                current[path] not in (None, "")
+                and not (
+                    path == "title"
+                    and current[path] in replace_values
+                )
+            ):
                 raise ValueError(f"Scalar plan would overwrite non-empty {path}")
     return targets
 
@@ -712,6 +835,12 @@ def parser() -> argparse.ArgumentParser:
     preview_parser = commands.add_parser("preview")
     preview_parser.add_argument("--path", required=True)
     preview_parser.add_argument("--value", action="append", required=True)
+    preview_parser.add_argument(
+        "--replace-value",
+        action="append",
+        default=[],
+        help="Explicit title placeholder that may be replaced.",
+    )
     preview_parser.add_argument("--marker", action="append", required=True)
     preview_parser.add_argument(
         "--known-edit-id",

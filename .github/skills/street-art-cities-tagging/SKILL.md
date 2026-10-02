@@ -117,6 +117,26 @@ For audits or edits involving artwork descriptions:
 - Filter explicitly to artwork markers. Do not apply artwork descriptions or
   missing-artist checks to festival, venue, or other place markers.
 
+## Title enrichment
+
+- SAC stores the artwork title in the core `title` field, not under
+  `attributes`.
+- Preserve every meaningful non-empty title. Propose a title only when the
+  current value is `null`, an empty string, or an explicitly reviewed
+  placeholder supplied with `--replace-value` (for example, `Untitled`).
+- Filter explicitly to artwork markers and show the exact marker list before
+  submission.
+- Use scalar preview syntax:
+
+  ```powershell
+  python .github\skills\street-art-cities-tagging\sac_attribute_edits.py preview `
+    --path title `
+    --value "Reviewed artwork title" `
+    --replace-value "Untitled" `
+    --marker "https://streetartcities.com/markers/MARKER_ID" `
+    --output ".tmp\sac-title-plan.json"
+  ```
+
 ## Known UploadAssistant fields
 
 The legacy UploadAssistant already provides these SAC fields. Reuse the same
