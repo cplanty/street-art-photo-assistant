@@ -8,6 +8,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import subprocess
 import threading
 import time
@@ -493,6 +494,12 @@ def create_app(
         return (
             resolve_local_path(config_root, str(paths["artists"])),
             resolve_local_path(config_root, str(paths["local_artists"])),
+        )
+
+    def temp_folder_path() -> Path:
+        return resolve_local_path(
+            config_root,
+            str(current_config().get("temporary_folder") or "_tmp_photos"),
         )
 
     def require_preview(token: str, submitted: dict[str, Any]) -> None:
@@ -991,6 +998,9 @@ def create_app(
         elif target == "diagnostics":
             path = manager.run_root / "_diagnostics"
             path.mkdir(parents=True, exist_ok=True)
+        elif target == "temp":
+            path = temp_folder_path()
+            path.mkdir(parents=True, exist_ok=True)
         else:
             candidate = Path(target).resolve()
             if not _inside(candidate, source_roots()):
@@ -1012,6 +1022,42 @@ def create_app(
         else:
             raise ValueError("Unknown local open action")
         return jsonify({"ok": True})
+
+    @app.post("/api/copy-to-temp")
+    def copy_to_temp():
+        if not _is_local_request():
+            abort(403)
+        payload = request.get_json(force=True)
+        raw_paths = payload.get("paths") or []
+        if not isinstance(raw_paths, list) or not raw_paths:
+            raise ValueError("No photos were selected to copy")
+        roots = source_roots()
+        resolved: list[Path] = []
+        for raw in raw_paths:
+            candidate = Path(str(raw)).resolve()
+            if not _inside(candidate, roots) or not candidate.is_file():
+                raise ValueError(
+                    f"Local path is outside configured sources: {raw}"
+                )
+            resolved.append(candidate)
+        destination = temp_folder_path()
+        destination.mkdir(parents=True, exist_ok=True)
+        used_names: set[str] = set()
+        for source in resolved:
+            name = source.name
+            if name in used_names:
+                stem, suffix = source.stem, source.suffix
+                counter = 2
+                while f"{stem}-{counter}{suffix}" in used_names:
+                    counter += 1
+                name = f"{stem}-{counter}{suffix}"
+            used_names.add(name)
+            shutil.copy2(source, destination / name)
+        return jsonify({
+            "ok": True,
+            "path": str(destination),
+            "count": len(resolved),
+        })
 
     @app.post("/api/diagnostics")
     def diagnostics():

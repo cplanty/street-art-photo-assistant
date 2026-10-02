@@ -101,10 +101,15 @@
           <button type="button" onclick="setPhotoSelection(true)">Select all</button>
           <button type="button" onclick="setPhotoSelection(false)">Select none</button>
         </div>
+        <div class="cluster-temp-tools">
+          <button type="button" onclick="copyToTempFolder()">Copy selected to temp folder</button>
+          <button type="button" onclick='openLocalPath("open", "temp")'>Open temp folder</button>
+          <span id="temp-folder-message" class="muted"></span>
+        </div>
         <div class="tag-proposals">
           <strong>Tag proposals:</strong>
           {% for tag in tag_proposals %}
-            <button type="button" class="proposal-chip" onclick="chooseProposal({{ tag|tojson }})">{{ tag }}</button>
+            <button type="button" class="proposal-chip" onclick='chooseProposal({{ tag|tojson }})'>{{ tag }}</button>
           {% else %}
             <span class="muted">every proposal is already on all images</span>
           {% endfor %}
@@ -301,7 +306,9 @@ function setPhotoSelection(checked) {
 }
 
 function chooseProposal(tag) {
-  document.getElementById('cluster-tag-input').value = tag;
+  const input = document.getElementById('cluster-tag-input');
+  input.value = tag;
+  applyTagChange(allPhotoPaths, [tag], [], input.dataset.editorKey);
 }
 
 function addInputTag(selectedOnly) {
@@ -536,6 +543,22 @@ async function openLocalPath(action, path) {
     await api('/api/open-local', {action, target: path});
   } catch (error) {
     alert(error.message);
+  }
+}
+
+async function copyToTempFolder() {
+  const message = document.getElementById('temp-folder-message');
+  const paths = selectedPaths();
+  if (!paths.length) {
+    message.textContent = 'Select at least one photo first.';
+    return;
+  }
+  message.textContent = 'Copying…';
+  try {
+    const result = await api('/api/copy-to-temp', {paths});
+    message.textContent = `Copied ${result.count} photo(s) to ${result.path}`;
+  } catch (error) {
+    message.textContent = error.message;
   }
 }
 
@@ -1050,9 +1073,12 @@ requestAnimationFrame(() => {
   const editors = [...document.querySelectorAll('.tag-editor:not(:disabled)')];
   const focusKey = sessionStorage.getItem(tagFocusStorageKey);
   if (focusKey) sessionStorage.removeItem(tagFocusStorageKey);
+  // Single-image clusters have no useful "all vs selected" distinction, so default
+  // focus to that image's own tag input instead of the cluster-wide one.
+  const defaultKey = allPhotoPaths.length === 1 ? 'photo-0' : 'cluster';
   const editor = editors.find(
     item => item.dataset.editorKey === focusKey
-  ) || editors[0];
+  ) || editors.find(item => item.dataset.editorKey === defaultKey) || editors[0];
   if (editor) editor.focus();
 });
 </script>

@@ -35,6 +35,13 @@ MEDIA_UPLOAD_URL = BASE_URL + "/api/media/upload"
 EDITS_URL = BASE_URL + "/api/edits"
 EDITS_MINE_URL = EDITS_URL + "/mine"
 CITY_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+# Bump when _normalize_marker's output shape changes, so an incremental
+# refresh discards an older cached snapshot instead of permanently keeping
+# markers that are missing newer fields (e.g. artist_name).
+MARKER_SCHEMA_VERSION = 2
+# Safety bound on how many images of one marker visual matching will ever
+# download and compare when "compare all marker images" is enabled.
+MAX_COMPARISON_IMAGES_PER_MARKER = 6
 USER_AGENT = (
     f"StreetArtPhotoAssistant/{__version__} "
     "(local desktop application; public SAC adapter)"
@@ -324,6 +331,8 @@ def _incremental_cursor(path: Path) -> tuple[str, list[dict[str, Any]]] | None:
         return None
     if cached.get("source") != "oauth-markers-api":
         return None
+    if cached.get("marker_schema_version") != MARKER_SCHEMA_VERSION:
+        return None
     markers = cached.get("markers")
     cursor = str(cached.get("synced_at") or "").strip()
     if not cursor or not isinstance(markers, list):
@@ -503,6 +512,7 @@ def refresh_city_api(
         markers = _merge_markers(previous, markers)
     payload = {
         "version": 1,
+        "marker_schema_version": MARKER_SCHEMA_VERSION,
         "city": city,
         "source": "oauth-markers-api",
         "refreshed_at": datetime.now(timezone.utc).isoformat(),
@@ -690,6 +700,7 @@ def _normalize_marker(item: dict[str, Any]) -> dict[str, Any]:
         "longitude": longitude,
         "address": address,
         "image_url": image_urls[0] if image_urls else None,
+        "image_urls": image_urls,
         "status": item.get("status"),
     }
 
@@ -729,6 +740,7 @@ def refresh_city(
     ]
     payload = {
         "version": 1,
+        "marker_schema_version": MARKER_SCHEMA_VERSION,
         "city": city,
         "source": "public-city-endpoint",
         "refreshed_at": datetime.now(timezone.utc).isoformat(),
@@ -825,11 +837,24 @@ def nearby_candidates(
     )
 
 
-def _reference_path(cache_directory: Path, marker_id: str) -> Path:
+def _reference_path(
+    cache_directory: Path, marker_id: str, image_index: int = 0
+) -> Path:
     safe_id = re.sub(r"[^A-Za-z0-9_-]+", "-", marker_id).strip("-")
     if not safe_id:
         raise ValueError("Marker has no cache-safe identifier")
-    return cache_directory / f"{safe_id}.jpg"
+    # Index 0 keeps the historical "<marker_id>.jpg" filename so existing
+    # single-image caches stay valid without a forced re-download.
+    suffix = f"-{image_index}" if image_index else ""
+    return cache_directory / f"{safe_id}{suffix}.jpg"
+
+
+def _marker_image_urls(marker: dict[str, Any]) -> list[str]:
+    urls = marker.get("image_urls")
+    if urls:
+        return [str(url) for url in urls]
+    single = marker.get("image_url")
+    return [str(single)] if single else []
 
 
 def cache_reference_image(
@@ -840,14 +865,20 @@ def cache_reference_image(
     maximum_bytes: int = 20_000_000,
     session: requests.Session | None = None,
     throttle: RequestThrottle | None = None,
+    image_index: int = 0,
 ) -> Path | None:
     """Cache one public marker image with scheme, type, and size limits."""
 
-    image_url = str(marker.get("image_url") or "")
+    urls = _marker_image_urls(marker)
+    if image_index >= len(urls):
+        return None
+    image_url = urls[image_index]
     parsed = urlparse(image_url)
     if parsed.scheme != "https" or not parsed.netloc:
         return None
-    path = _reference_path(cache_directory, str(marker["marker_id"]))
+    path = _reference_path(
+        cache_directory, str(marker["marker_id"]), image_index
+    )
     if path.is_file() and path.stat().st_size:
         return path
     client = session or requests.Session()
@@ -881,6 +912,40 @@ def cache_reference_image(
     finally:
         temporary.unlink(missing_ok=True)
     return path
+
+
+def cache_reference_images(
+    marker: dict[str, Any],
+    cache_directory: Path,
+    *,
+    maximum_images: int | None = None,
+    timeout_seconds: int = 30,
+    maximum_bytes: int = 20_000_000,
+    session: requests.Session | None = None,
+    throttle: RequestThrottle | None = None,
+) -> list[Path]:
+    """Cache every available marker image, skipping any single failure."""
+
+    urls = _marker_image_urls(marker)
+    if maximum_images is not None:
+        urls = urls[:maximum_images]
+    references = []
+    for image_index in range(len(urls)):
+        try:
+            reference = cache_reference_image(
+                marker,
+                cache_directory,
+                timeout_seconds=timeout_seconds,
+                maximum_bytes=maximum_bytes,
+                session=session,
+                throttle=throttle,
+                image_index=image_index,
+            )
+        except (requests.RequestException, OSError, ValueError):
+            continue
+        if reference is not None:
+            references.append(reference)
+    return references
 
 
 def cache_city_images(
@@ -937,6 +1002,7 @@ def compare_clusters(
     candidate_radius_m: float,
     visual_enabled: bool,
     profile: str,
+    compare_all_marker_images: bool = False,
     session: requests.Session | None = None,
     throttle: RequestThrottle | None = None,
     progress: ProgressCallback | None = None,
@@ -993,28 +1059,50 @@ def compare_clusters(
                             f"of {image_total}"
                         ),
                     )
+                best_reference = None
+                best_similarity = None
                 try:
-                    cached = candidate.get("cached_image")
-                    reference = (
-                        Path(str(cached))
-                        if cached and Path(str(cached)).is_file()
-                        else cache_reference_image(
+                    if compare_all_marker_images:
+                        references = cache_reference_images(
                             candidate,
                             reference_cache,
+                            maximum_images=MAX_COMPARISON_IMAGES_PER_MARKER,
                             session=session,
                             throttle=throttle,
                         )
-                    )
-                    similarity = (
-                        image_similarity(cluster.photos[0].path, reference)
-                        if reference else None
-                    )
+                    else:
+                        cached = candidate.get("cached_image")
+                        single = (
+                            Path(str(cached))
+                            if cached and Path(str(cached)).is_file()
+                            else cache_reference_image(
+                                candidate,
+                                reference_cache,
+                                session=session,
+                                throttle=throttle,
+                            )
+                        )
+                        references = [single] if single else []
+                    for reference in references:
+                        try:
+                            similarity = image_similarity(
+                                cluster.photos[0].path, reference
+                            )
+                        except (OSError, ValueError) as exc:
+                            candidate["visual_error"] = str(exc)
+                            continue
+                        if similarity is not None and (
+                            best_similarity is None
+                            or similarity > best_similarity
+                        ):
+                            best_similarity = similarity
+                            best_reference = reference
                 except (requests.RequestException, OSError, ValueError) as exc:
-                    reference = None
-                    similarity = None
                     candidate["visual_error"] = str(exc)
-                candidate["cached_image"] = str(reference) if reference else None
-                candidate["visual_similarity"] = similarity
+                candidate["cached_image"] = (
+                    str(best_reference) if best_reference else None
+                )
+                candidate["visual_similarity"] = best_similarity
         best = candidates[0] if candidates else None
         verified = [
             candidate

@@ -127,11 +127,17 @@
               <option value="thorough">Thorough</option>
             </select>
           </label>
+          <label class="check">
+            <input id="compare_all_marker_images" type="checkbox">
+            Compare every SAC marker picture, not just the first
+          </label>
+          <p class="muted">On by default: each nearby marker may have several pictures, and the best-matching one is used for the similarity score. Turn this off to only check each marker's first picture and reduce downloads.</p>
         </div>
       </section>
 
       <section class="card">
-        <h2>Configuration</h2>
+        <details id="configuration-section">
+        <summary><h2>Configuration</h2></summary>
         <label>Temporary photo folder
           <span class="input-action">
             <input id="temporary_folder">
@@ -170,6 +176,7 @@
           </div>
           <p id="diagnostics-message" class="muted"></p>
         </div>
+        </details>
       </section>
     </div>
   </div>
@@ -361,6 +368,7 @@ function readForm() {
     city: byId('city').value.trim(),
     visual_enabled: byId('visual_enabled').checked,
     download_images: byId('download_images').checked,
+    compare_all_marker_images: byId('compare_all_marker_images').checked,
     profile: byId('profile').value
   });
   return config;
@@ -383,6 +391,7 @@ function writeForm() {
   byId('city').value = config.matching.city || '';
   byId('visual_enabled').checked = !!config.matching.visual_enabled;
   byId('download_images').checked = !!config.matching.download_images;
+  byId('compare_all_marker_images').checked = config.matching.compare_all_marker_images !== false;
   byId('profile').value = config.matching.profile || 'balanced';
 }
 

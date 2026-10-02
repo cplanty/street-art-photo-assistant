@@ -16,6 +16,12 @@ target/reference roles. One source may have both GPS roles.
 manifests, reports, logs, and edit plans. `read_only` disables all metadata
 apply endpoints while keeping preview and reports available.
 
+The cluster detail page's **Copy selected to temp folder** button copies the
+currently checked photos into `temporary_folder` (creating it if needed,
+overwriting same-named files, and leaving any other existing files alone).
+**Open temp folder** opens that folder locally. Both actions are restricted to
+photos inside the configured sources, like every other local file action.
+
 ## Tag policy
 
 - `generic_tags` are categories and do not identify an artwork.
@@ -51,6 +57,11 @@ apply endpoints while keeping preview and reports available.
   It defaults to `false`, which caches only bounded candidate pictures required
   by visual matching. Set it to `true` to incrementally cache all available
   city marker pictures for evidence and map thumbnails.
+- `matching.compare_all_marker_images` is exposed as **Compare every SAC
+  marker picture, not just the first**. It defaults to `true`: visual matching
+  downloads and compares every picture of each bounded candidate marker and
+  keeps the best-scoring one. Set it to `false` to only compare each
+  candidate's first picture and reduce downloads.
 - `matching.large_city_warning_markers` and
   `matching.large_reference_warning` control progress warnings for large work.
 - `paths.city_cache` and `paths.reference_images` select local provider caches.

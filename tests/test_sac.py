@@ -550,6 +550,53 @@ class SACTests(unittest.TestCase):
             "updatedSince", session.get.call_args.kwargs["params"]
         )
 
+    def test_incremental_refresh_discards_an_older_marker_schema_cache(self):
+        session = Mock()
+        session.get.return_value = FakeResponse({
+            "items": [{
+                **self.marker_item(),
+                "siteId": "test-city",
+            }],
+            "page": 1, "perPage": 100, "total": 1,
+        })
+        with tempfile.TemporaryDirectory() as temporary:
+            cache = Path(temporary)
+            first = refresh_city_api(
+                "test-city",
+                cache,
+                access_token="test-access-token",
+                session=session,
+                incremental=True,
+            )
+            # Simulate a cache written before artist_name/artist_slug fields
+            # existed in the marker schema.
+            stale_path = cache / "test-city.json"
+            stale_payload = json.loads(stale_path.read_text(encoding="utf-8"))
+            stale_payload.pop("marker_schema_version", None)
+            for marker in stale_payload["markers"]:
+                marker.pop("artist_name", None)
+                marker.pop("artist_slug", None)
+            stale_path.write_text(
+                json.dumps(stale_payload), encoding="utf-8"
+            )
+
+            second = refresh_city_api(
+                "test-city",
+                cache,
+                access_token="test-access-token",
+                session=session,
+                incremental=True,
+            )
+
+        self.assertFalse(first["incremental"])
+        self.assertFalse(second["incremental"])
+        self.assertNotIn(
+            "updatedSince", session.get.call_args.kwargs["params"]
+        )
+        self.assertEqual(
+            "public-artist", second["markers"][0]["artist_slug"]
+        )
+
     def test_nearby_candidates_rank_same_artist_first(self):
         cluster = PhotoCluster(
             id="cluster",
@@ -803,6 +850,61 @@ class SACTests(unittest.TestCase):
         self.assertIsNone(candidate["visual_similarity"])
         self.assertEqual("sac-matching", progress[0][0])
         self.assertEqual("sac-images", progress[-1][0])
+
+    def test_compare_all_marker_images_keeps_the_best_scoring_picture(self):
+        cluster = PhotoCluster(
+            id="cluster",
+            tag="Artist",
+            latitude=48.0,
+            longitude=2.0,
+        )
+        city = {"city": "test-city", "markers": [{
+            "marker_id": "same",
+            "latitude": 48.0,
+            "longitude": 2.0,
+            "artist_slug": "artist",
+            "image_urls": [
+                "https://images.example.test/one.jpg",
+                "https://images.example.test/two.jpg",
+            ],
+            "status": "active",
+        }]}
+        image_bytes = BytesIO()
+        Image.new("RGB", (4, 4), "blue").save(image_bytes, format="JPEG")
+        session = Mock()
+        session.get.return_value = FakeResponse(content=image_bytes.getvalue())
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            artists = root / "artists.csv"
+            artists.write_text(
+                "tag;streetartcities_slug;instagram;status\n"
+                "Artist;artist;artist;confirmed\n",
+                encoding="utf-8",
+            )
+            cluster.photos.append(Mock(path=root / "photo.jpg"))
+
+            with patch(
+                "street_art_photo_assistant.sac.image_similarity",
+                side_effect=lambda local, reference: (
+                    0.9 if reference.name == "same-1.jpg" else 0.2
+                ),
+            ):
+                result = compare_clusters(
+                    [cluster],
+                    city,
+                    artist_mapping_path=artists,
+                    reference_cache=root / "refs",
+                    candidate_radius_m=100,
+                    visual_enabled=True,
+                    profile="balanced",
+                    compare_all_marker_images=True,
+                    session=session,
+                )
+
+        candidate = result["cluster"]["candidates"][0]
+        self.assertEqual(0.9, candidate["visual_similarity"])
+        self.assertTrue(candidate["cached_image"].endswith("same-1.jpg"))
+        self.assertEqual(2, session.get.call_count)
 
     def test_request_throttle_enforces_minimum_interval(self):
         throttle = RequestThrottle(0.5)

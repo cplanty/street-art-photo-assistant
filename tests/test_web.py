@@ -1083,6 +1083,35 @@ class WebTests(unittest.TestCase):
         })
         self.assertEqual(400, rejected.status_code)
 
+    def test_copy_to_temp_copies_selected_photos_without_clearing(self):
+        temp_folder = self.root / "_tmp_photos"
+        temp_folder.mkdir()
+        stale = temp_folder / "stale.jpg"
+        stale.write_bytes(b"leftover from a previous cluster")
+
+        response = self.client.post("/api/copy-to-temp", json={
+            "paths": [str(self.located)],
+        })
+
+        self.assertEqual(200, response.status_code, response.get_data(as_text=True))
+        payload = response.get_json()
+        self.assertEqual(1, payload["count"])
+        self.assertEqual(str(temp_folder), payload["path"])
+        self.assertTrue((temp_folder / self.located.name).is_file())
+        # Previously copied, unrelated files are left untouched.
+        self.assertTrue(stale.is_file())
+
+    def test_copy_to_temp_rejects_paths_outside_configured_sources(self):
+        outside = self.root / "outside.jpg"
+        copy2(FIXTURES / "located.jpg", outside)
+
+        response = self.client.post("/api/copy-to-temp", json={
+            "paths": [str(outside)],
+        })
+
+        self.assertEqual(400, response.status_code)
+        self.assertIn("outside configured sources", response.get_json()["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

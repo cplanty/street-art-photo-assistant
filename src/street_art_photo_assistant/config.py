@@ -45,6 +45,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "city": "",
         "visual_enabled": False,
         "download_images": False,
+        "compare_all_marker_images": True,
         "profile": "balanced",
         "candidate_radius_m": 80,
         "request_interval_seconds": 0.5,
@@ -118,6 +119,12 @@ def validate_config(config: dict[str, Any]) -> None:
     ):
         raise ValueError(
             "matching.incremental_marker_refresh must be true or false"
+        )
+    if not isinstance(
+        config["matching"].get("compare_all_marker_images", True), bool
+    ):
+        raise ValueError(
+            "matching.compare_all_marker_images must be true or false"
         )
     if float(config["matching"]["request_interval_seconds"]) < 0:
         raise ValueError("matching.request_interval_seconds cannot be negative")

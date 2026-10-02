@@ -170,7 +170,10 @@ instead of being missed.
 
 A full refresh is performed automatically whenever an incremental one is not
 safe: no cache file, an unreadable cache, a cache written by the public source,
-or a cache without `synced_at`. The stored payload reports which mode ran
+a cache without `synced_at`, or a cache whose `marker_schema_version` does not
+match the adapter's current marker normalization (so markers cached before a
+field such as `artist_name` existed are fully re-synced instead of being kept
+stale forever). The stored payload reports which mode ran
 (`incremental`) and how many markers the provider returned
 (`changed_since_last_sync`).
 
@@ -218,6 +221,16 @@ matching downloads no city-wide images; visual matching caches only its bounded
 nearby candidates because the comparison requires image bytes. Changing this
 option never removes existing cached pictures.
 
+**Compare every SAC marker picture** maps to `matching.compare_all_marker_images`
+and defaults to `true`. A marker can have several published pictures; with this
+enabled, visual matching downloads and compares every picture of each bounded
+candidate (capped at `MAX_COMPARISON_IMAGES_PER_MARKER` pictures per marker)
+and keeps the single best-scoring picture as the displayed evidence and
+similarity score. Disable this to only check each candidate's first picture,
+which reduces downloads at the cost of possibly missing a match that only
+appears in a marker's second or later picture.
+
+
 The Generate page shows durable progress for city refresh, cluster candidate
 gathering, and every cached/downloaded reference image. It warns when marker or
 reference counts reach the configurable
@@ -235,7 +248,8 @@ the adapter:
 2. gathers markers inside `matching.candidate_radius_m`;
 3. ranks matching artist slugs before other markers, then by distance;
 4. optionally compares the first primary photo with cached references using
-   local OpenCV ORB features.
+   local OpenCV ORB features, checking every picture published for each
+   candidate marker (configurable) and keeping the best-scoring one.
 
 The report uses conservative labels:
 
@@ -274,7 +288,9 @@ several reasons:
   marker may fall outside that set.
 - **Single local image:** Visual matching uses only the cluster's first primary
   photo. A context shot, poor angle, or obscured view can be less useful than
-  another photo in the cluster.
+  another photo in the cluster. (Each marker's own pictures are all compared
+  when `matching.compare_all_marker_images` is enabled; only the local side of
+  the comparison is still limited to one photo.)
 - **Reference-image availability:** A marker may have no usable picture, or its
   picture may fail validation or download. Cached pictures are keyed by marker
   ID, so a picture replaced upstream remains stale until its cache entry is

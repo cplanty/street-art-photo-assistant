@@ -43,6 +43,10 @@ button:disabled, .primary:disabled {
   background: white;
 }
 .stage { margin-top: 16px; }
+#configuration-section > summary { cursor: pointer; list-style: none; }
+#configuration-section > summary::-webkit-details-marker { display: none; }
+#configuration-section > summary h2 { display: inline; }
+#configuration-section[open] > summary { margin-bottom: 8px; }
 .subsection { margin-top: 18px; padding-top: 16px; border-top: 1px solid #d8dee4; }
 .form-row, .button-row, .file-row, .input-action {
   display: flex;
@@ -254,6 +258,13 @@ code { overflow-wrap: anywhere; }
 }
 .cluster-tag-tools label { flex: 1; min-width: 220px; }
 .cluster-tag-tools input { width: 100%; }
+.cluster-temp-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
 .tag-proposals, .photo-proposals {
   display: flex;
   align-items: center;

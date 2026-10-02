@@ -382,6 +382,9 @@ def run_offline_clustering(
             candidate_radius_m=float(matching["candidate_radius_m"]),
             visual_enabled=bool(matching.get("visual_enabled")),
             profile=str(matching["profile"]),
+            compare_all_marker_images=bool(
+                matching.get("compare_all_marker_images", True)
+            ),
             throttle=throttle,
             progress=sac_progress,
         )
