@@ -44,6 +44,47 @@ never overwrites a curated name, never invents a slug for a tag that has none,
 and reports unresolved slugs and possible tag/slug matches for review instead
 of applying them.
 
+### Catalogue maintenance
+
+Treat the effective artist catalogue as the tracked `artists.csv` plus tags
+found only in `artists.local.csv`. Tags are compared case-insensitively, but
+their original spelling is preserved because `tag` is written to photo EXIF.
+The tracked row takes precedence over a duplicate local tag.
+
+After any artist addition, correction, rename, or deduplication:
+
+1. Parse both files as UTF-8 semicolon-separated CSV with the standard
+   five-column header.
+2. Put shared artists in tracked `artists.csv`; keep user-specific, internal,
+   or unverified rows in `artists.local.csv`.
+3. Never copy the complete local overlay into the tracked file. It is
+   gitignored specifically to prevent private workflow data from being
+   published.
+4. Never replace a non-empty field with a blank. Resolve conflicting non-empty
+   slugs, provider names, Instagram handles, or special statuses manually.
+5. Search for cross-tag collisions in normalized `streetartcities_slug` and
+   `instagram`. They may indicate either a duplicate or an intentional legacy
+   alias. Preserve the established EXIF tag for a true duplicate and attach the
+   canonical provider identity to it. For example, `Jools` maps to
+   `jools-street;Jools Street;jools.street`; there is no separate
+   `Jools Street` row.
+6. Set `confirmed` only with verified identity evidence. Preserve meaningful
+   states such as `unknown`, `unsorted`, `placeholder`, `new`, and
+   `legacy-alias`.
+7. Remove case-insensitive duplicate tags within each file without reordering
+   the catalogue or creating whitespace-only churn.
+
+Completion requires no duplicate tags, `git diff --check`, and the focused
+tests:
+
+```powershell
+python -m pytest tests\test_sac.py tests\test_web.py -q
+```
+
+Only tracked `artists.csv` changes are committed. Confirm
+`git check-ignore -v data\artists.local.csv` before staging; the overlay must
+remain local.
+
 ## Normalized photo
 
 ```json

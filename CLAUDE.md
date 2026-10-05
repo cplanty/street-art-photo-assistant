@@ -92,6 +92,10 @@ pattern for any new metadata-writing feature — see Repository rules below.
 - Synthetic fixtures only.
 - `_unknown` identifies an untagged artwork; `_Wall_` identifies a wall grouping.
 - Do not hardcode user-specific labels or exclusion policies.
+- After changing `data/artists.csv` or `data/artists.local.csv`, follow
+  `docs/data-formats.md` §Catalogue maintenance. Treat main plus local as the
+  effective catalogue, preserve tracked-file precedence, and never publish the
+  gitignored local overlay.
 - Preview every metadata write, replay the exact approved target list, preserve
   unrelated metadata, and write a JSON change log.
 - Prefer a focused module and test over a new standalone script.
