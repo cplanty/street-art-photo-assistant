@@ -74,13 +74,15 @@
         </div>
 
         <h2>Artists</h2>
-        <p class="muted">Use an existing SAC artist ID, or clear it and enter a new exact artist name.</p>
+        <p class="muted">The first artist is primary. Use an existing SAC artist ID, or clear it and enter a new exact artist name.</p>
         <div id="artist-rows">
+          {% for artist in artists or [{"id": "", "title": ""}] %}
           <div class="proposal-pair artist-row">
-            <input class="artist-id" value="{{ artist_slug }}" placeholder="existing SAC artist ID">
-            <input class="artist-title" value="{{ '' if artist_slug else artist_name }}" placeholder="new artist name">
+            <input class="artist-id" value="{{ artist.id }}" placeholder="existing SAC artist ID"{% if artist.id and artist.title %} title="{{ artist.title }}"{% endif %}>
+            <input class="artist-title" value="{{ '' if artist.id else artist.title }}" placeholder="new artist name">
             <button type="button" onclick="this.parentElement.remove()">Remove</button>
           </div>
+          {% endfor %}
         </div>
         <button type="button" onclick="addArtistRow()">Add artist</button>
       </section>

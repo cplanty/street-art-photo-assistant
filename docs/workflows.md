@@ -142,10 +142,16 @@ tab shows the complete proposal before any network write: ordered images,
 attribution, coordinates, city, title, description, artists, core tags,
 advanced attributes, and the reviewer comment are all editable.
 
-The form preselects only the photo used to open it. Artist identity and
-Instagram are joined through the combined public and local artist catalogues;
-optional description and advanced defaults come from
-`paths.artist_descriptions`. Confirming the form
+The form preselects only the photo used to open it. It prefills one artist row
+per artist tag on that photo (plus the cluster tag): tags mapped in the
+combined public and local artist catalogues use their SAC artist ID, and
+unmapped tags are offered as new artist names. The primary artist—the mapped
+cluster tag, else the first mapped tag—comes first; rows can be removed,
+added, or edited and are submitted in order. Instagram and the optional
+description come from the primary artist; advanced defaults from
+`paths.artist_descriptions` are merged across all prefilled artists, with
+list values combined and single values kept from the primary artist.
+Confirming the form
 revalidates every selected file fingerprint, requests SAC upload links, uploads
 the original bytes, and submits one marker-creation edit. Third-party edits
 remain submitted for manual review, and the result links to SAC's review queue.

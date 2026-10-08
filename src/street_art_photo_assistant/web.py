@@ -178,6 +178,78 @@ def _artist_tags(
     return sorted(set(tags), key=str.casefold), by_slug, details_by_slug
 
 
+def _proposal_artists(
+    tags: list[str],
+    cluster_tag: str,
+    generic_tags: set[str],
+    tags_by_slug: dict[str, list[str]],
+    artist_details: dict[str, dict[str, str]],
+) -> list[dict[str, str]]:
+    """Prefill one proposal artist row per artist tag, primary first.
+
+    Mapped tags use their SAC slug; unmapped tags are offered as new artist
+    names. The primary artist is the mapped cluster tag, else the first
+    mapped tag, else the first tag."""
+
+    slug_by_tag = {
+        mapped.casefold(): slug
+        for slug, mapped_tags in tags_by_slug.items()
+        for mapped in mapped_tags
+    }
+    artists: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for raw in tags:
+        tag = str(raw or "").strip()
+        if (
+            not tag
+            or tag.startswith("_")
+            or tag.casefold() in generic_tags
+        ):
+            continue
+        slug = slug_by_tag.get(tag.casefold(), "")
+        key = "id:" + slug if slug else "tag:" + tag.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        name = (artist_details.get(slug) or {}).get("name") if slug else ""
+        artists.append({"tag": tag, "id": slug, "title": name or tag})
+    primary = next(
+        (
+            artist for artist in artists
+            if artist["id"] and artist["tag"].casefold() == cluster_tag.casefold()
+        ),
+        None,
+    ) or next((artist for artist in artists if artist["id"]), None)
+    if primary is not None:
+        artists.remove(primary)
+        artists.insert(0, primary)
+    return artists
+
+
+def _merge_default_attributes(
+    primary: dict[str, Any], extra: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge another artist's SAC default attributes into the primary's.
+
+    List-valued attributes are unioned in order; a single-valued attribute
+    keeps the primary artist's value."""
+
+    merged = deepcopy(primary)
+    for key, value in extra.items():
+        if value in (None, "", []):
+            continue
+        current = merged.get(key)
+        if current in (None, "", []):
+            merged[key] = deepcopy(value)
+        elif isinstance(current, list) or isinstance(value, list):
+            items = list(current) if isinstance(current, list) else [current]
+            for item in value if isinstance(value, list) else [value]:
+                if item not in items:
+                    items.append(item)
+            merged[key] = items
+    return merged
+
+
 def _artist_defaults(path: Path, tag: str) -> dict[str, Any]:
     if not path.is_file() or not tag:
         return {}
@@ -1397,50 +1469,35 @@ def create_app(
             and not str(tag).startswith("_")
             and str(tag).casefold() not in generic_tags
         ]
-        candidate_tags = [
-            tag for tag in [cluster_tag, *live_tags]
-            if tag and not tag.startswith("_")
-        ]
-        mapped_candidates = [
-            (tag, slug)
-            for tag in candidate_tags
-            for slug, mapped_tags in tags_by_slug.items()
-            if any(
-                mapped.casefold() == tag.casefold()
-                for mapped in mapped_tags
-            )
-        ]
-        cluster_mapping = next(
-            (
-                item for item in mapped_candidates
-                if item[0].casefold() == cluster_tag.casefold()
-            ),
-            None,
+        artists = _proposal_artists(
+            [cluster_tag, *live_tags],
+            cluster_tag,
+            generic_tags,
+            tags_by_slug,
+            artist_details,
         )
-        unique_mappings = list(dict.fromkeys(mapped_candidates))
-        artist_tag, artist_slug = (
-            cluster_mapping
-            or (unique_mappings[0] if len(unique_mappings) == 1 else ("", ""))
-        )
-        if not artist_tag and len(live_tags) == 1:
-            artist_tag = live_tags[0]
-        artist_name = str(
-            (artist_details.get(artist_slug) or {}).get("name")
-            or artist_tag
-        )
+        primary = artists[0] if artists else {"tag": "", "id": "", "title": ""}
         defaults_path = resolve_local_path(
             config_root,
             str(current_config()["paths"]["artist_descriptions"]),
         )
-        defaults = _artist_defaults(defaults_path, artist_tag)
+        defaults = _artist_defaults(defaults_path, primary["tag"])
         description = str(
             defaults.get("description") or defaults.get("bio") or ""
         ).strip()
-        attributes = deepcopy(defaults.get("default_attributes") or {})
-        if not isinstance(attributes, dict):
-            raise ValueError("Artist default_attributes must be an object")
+        attributes: dict[str, Any] = {}
+        for artist in artists:
+            artist_defaults = (
+                defaults if artist is primary
+                else _artist_defaults(defaults_path, artist["tag"])
+            )
+            extra = artist_defaults.get("default_attributes") or {}
+            if not isinstance(extra, dict):
+                raise ValueError("Artist default_attributes must be an object")
+            attributes = _merge_default_attributes(attributes, extra)
         instagram = str(
-            (artist_details.get(artist_slug) or {}).get("instagram_url") or ""
+            (artist_details.get(primary["id"]) or {}).get("instagram_url")
+            or ""
         )
         if instagram:
             attributes.setdefault("press,_media,_blog_link", instagram)
@@ -1480,8 +1537,7 @@ def create_app(
             city=str(report.get("city") or ""),
             latitude=latitude,
             longitude=longitude,
-            artist_slug=artist_slug,
-            artist_name=artist_name,
+            artists=artists,
             description=description,
             attributes=[
                 (key, json.dumps(value, ensure_ascii=False))

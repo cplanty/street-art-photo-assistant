@@ -20,6 +20,8 @@ from street_art_photo_assistant.web import (
     _artist_tags,
     _choose_folder,
     _fill_artist_names,
+    _merge_default_attributes,
+    _proposal_artists,
     _suggest_artist_slugs,
     create_app,
 )
@@ -955,6 +957,111 @@ class WebTests(unittest.TestCase):
         )
         self.assertEqual("accepted", refreshed_receipt["edit"]["status"])
         self.assertIn("status_checked_at", refreshed_receipt)
+
+    def test_sac_proposal_prefills_every_photo_artist(self):
+        artists = self.root / "data" / "artists.csv"
+        artists.parent.mkdir(parents=True, exist_ok=True)
+        artists.write_text(
+            "tag;streetartcities_slug;streetartcities_name;instagram;status\n"
+            "Test Artist;test-artist;Test Artist;test.artist;confirmed\n"
+            "Second Artist;second-artist;Second Artist;;confirmed\n",
+            encoding="utf-8",
+        )
+        descriptions = self.root / "data" / "artist_descriptions.json"
+        descriptions.write_text(json.dumps({
+            "Test Artist": {
+                "description": "Primary synthetic description.",
+                "default_attributes": {
+                    "artist_nationality": ["France"],
+                    "artwork_type": "Mural",
+                },
+            },
+            "Second Artist": {
+                "description": "Second synthetic description.",
+                "default_attributes": {
+                    "artist_nationality": ["Spain"],
+                    "artwork_type": "Paste-up",
+                },
+            },
+        }), encoding="utf-8")
+        preview = self.preview()
+        started = self.client.post("/api/runs", json={
+            "config": self.config,
+            "preview_token": preview["token"],
+        }).get_json()["run"]
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            if self.manager.status(started["id"])["status"] not in {
+                "queued", "running"
+            }:
+                break
+            time.sleep(0.05)
+        cluster = self.manager.report(started["id"])["clusters"][0]
+        photo_path = cluster["photos"][0]["path"]
+        apply_tag_edit_plan(
+            build_tag_edit_plan(
+                [Path(photo_path)],
+                add=["Test Artist", "Second Artist"],
+            ),
+            allowed_roots=[self.photos],
+            change_log_path=self.root / "change.json",
+        )
+
+        page = self.client.get(
+            f"/runs/{started['id']}/clusters/{cluster['id']}/sac-proposal",
+            query_string={"photo": photo_path},
+        )
+
+        self.assertEqual(200, page.status_code)
+        content = page.get_data(as_text=True)
+        self.assertLess(
+            content.index('value="test-artist"'),
+            content.index('value="second-artist"'),
+        )
+        self.assertIn("Primary synthetic description.", content)
+        self.assertNotIn("Second synthetic description.", content)
+        self.assertIn("Spain", content)
+        self.assertNotIn("Paste-up", content)
+
+    def test_proposal_artists_order_primary_and_keep_unmapped_names(self):
+        artists = _proposal_artists(
+            ["Unmapped", "StreetArt", "_unknown", "Second", "First", "first"],
+            "First",
+            {"streetart"},
+            {"first-slug": ["First"], "second-slug": ["Second"]},
+            {"first-slug": {"name": "First Display"}},
+        )
+
+        self.assertEqual([
+            {"tag": "First", "id": "first-slug", "title": "First Display"},
+            {"tag": "Unmapped", "id": "", "title": "Unmapped"},
+            {"tag": "Second", "id": "second-slug", "title": "Second"},
+        ], artists)
+        self.assertEqual(
+            "second-slug",
+            _proposal_artists(
+                ["Unmapped", "Second"], "Unmapped", set(),
+                {"second-slug": ["Second"]}, {},
+            )[0]["id"],
+        )
+        self.assertEqual([], _proposal_artists(["_unknown"], "", set(), {}, {}))
+
+    def test_merge_default_attributes_unions_lists_and_keeps_primary_scalars(self):
+        primary = {"artist_nationality": ["France"], "artwork_type": "Mural"}
+
+        merged = _merge_default_attributes(primary, {
+            "artist_nationality": ["Spain", "France"],
+            "artwork_type": "Paste-up",
+            "artwork_style": ["Stencil"],
+            "empty": "",
+        })
+
+        self.assertEqual({
+            "artist_nationality": ["France", "Spain"],
+            "artwork_type": "Mural",
+            "artwork_style": ["Stencil"],
+        }, merged)
+        self.assertEqual(["France"], primary["artist_nationality"])
 
     def test_proposals_exclude_tags_the_photos_already_carry(self):
         preview = self.preview()
